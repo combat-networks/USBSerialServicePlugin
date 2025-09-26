@@ -1,381 +1,212 @@
 package com.saemaps.android.usbserial;
 
-import android.content.BroadcastReceiver;
-import android.content.ComponentName;
 import android.content.Context;
 import android.content.Intent;
-import android.content.IntentFilter;
-import android.content.ServiceConnection;
 import android.hardware.usb.UsbDevice;
-import android.os.IBinder;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
-import android.widget.AdapterView;
-import android.widget.ArrayAdapter;
 import android.widget.Button;
-import android.widget.EditText;
-import android.widget.ListView;
+import android.widget.LinearLayout;
+import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.atak.plugins.impl.PluginLayoutInflater;
-import com.saemaps.android.maps.MapView;
-import com.saemaps.android.usbserial.plugin.R;
-import com.saemaps.android.usbserial.usbserial.USBSerialService;
 import com.saemaps.android.dropdown.DropDown.OnStateListener;
 import com.saemaps.android.dropdown.DropDownReceiver;
-
-import com.saemaps.android.usbserial.PlatformProxy;
-import com.saemaps.coremap.log.Log;
+import com.saemaps.android.maps.MapView;
+import com.saemaps.android.usbserial.usbserial.SerialDriverProber;
+import com.saemaps.android.usbserial.usbserial.USBSerialManager;
+import com.saemaps.android.usbserial.usbserial.USBSerialManager.USBSerialListener;
+import com.hoho.android.usbserial.driver.UsbSerialDriver;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 
-public class USBSerialDropDownReceiver extends DropDownReceiver implements
-        OnStateListener {
-
-    public static final String TAG = "USBSerial";
+/**
+ * Minimal diagnostic drop-down allowing scan/connect/test write for USB serial devices.
+ */
+public class USBSerialDropDownReceiver extends DropDownReceiver implements OnStateListener, USBSerialListener {
 
     public static final String SHOW_PLUGIN = "com.saemaps.android.usbserial.SHOW_PLUGIN";
-    private final View templateView;
+
+    private final View rootView;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final Context pluginContext;
-    
-    // USB串口相关
-    private USBSerialService serialService;
-    private boolean serviceBound = false;
-    private List<UsbDevice> deviceList = new ArrayList<>();
-    private ArrayAdapter<String> deviceAdapter;
-    private UsbDevice selectedDevice;
-    
-    // UI组件
-    private TextView tvDeviceStatus;
-    private Button btnScan;
-    private Button btnConnect;
-    private ListView lvDevices;
-    private EditText etBaudrate;
-    private EditText etDatabits;
-    private EditText etSendData;
-    private Button btnSend;
-    private TextView tvReceivedData;
-    private Button btnClear;
 
-    /**************************** CONSTRUCTOR *****************************/
+    private final List<UsbDevice> discoveredDevices = new ArrayList<>();
+    private final USBSerialManager serialManager;
 
-    public USBSerialDropDownReceiver(final MapView mapView,
-                                          final Context context) {
+    private TextView tvStatus;
+    private TextView tvDevices;
+    private TextView tvLog;
+    private ScrollView logScroll;
+
+    public USBSerialDropDownReceiver(MapView mapView, Context context) {
         super(mapView);
         this.pluginContext = context;
-
-        // Remember to use the PluginLayoutInflator if you are actually inflating a custom view
-        // In this case, using it is not necessary - but I am putting it here to remind
-        // developers to look at this Inflator
-        templateView = PluginLayoutInflater.inflate(context,
-                R.layout.main_layout, null);
-        
-        // 初始化UI组件
+        // rootView = PluginLayoutInflater.inflate(context, R.layout.main_layout, null);
+        rootView = new LinearLayout(context);
         initViews();
-        
-        // 初始化设备列表适配器
-        deviceAdapter = new ArrayAdapter<>(context, android.R.layout.simple_list_item_1);
-        lvDevices.setAdapter(deviceAdapter);
-        
-        // 绑定USB串口服务
-        bindSerialService();
-        
-        // 注册数据接收广播
-        registerDataReceiver();
+        serialManager = new USBSerialManager(context.getApplicationContext());
+        serialManager.setListener(this);
     }
-    
-    /**
-     * 初始化UI组件
-     */
+
     private void initViews() {
-        tvDeviceStatus = templateView.findViewById(R.id.tv_device_status);
-        btnScan = templateView.findViewById(R.id.btn_scan);
-        btnConnect = templateView.findViewById(R.id.btn_connect);
-        lvDevices = templateView.findViewById(R.id.lv_devices);
-        etBaudrate = templateView.findViewById(R.id.et_baudrate);
-        etDatabits = templateView.findViewById(R.id.et_databits);
-        etSendData = templateView.findViewById(R.id.et_send_data);
-        btnSend = templateView.findViewById(R.id.btn_send);
-        tvReceivedData = templateView.findViewById(R.id.tv_received_data);
-        btnClear = templateView.findViewById(R.id.btn_clear);
-        
-        // 设置按钮点击事件
-        btnScan.setOnClickListener(v -> scanDevices());
-        btnConnect.setOnClickListener(v -> connectToSelectedDevice());
-        btnSend.setOnClickListener(v -> sendData());
-        btnClear.setOnClickListener(v -> clearReceivedData());
-        
-        // 设置设备列表点击事件
-        lvDevices.setOnItemClickListener((parent, view, position, id) -> {
-            selectedDevice = deviceList.get(position);
-            btnConnect.setEnabled(true);
-            Log.d(TAG, "选择设备: " + selectedDevice.getDeviceName());
-        });
-    }
-    
-    /**
-     * 绑定USB串口服务
-     */
-    private void bindSerialService() {
-        Intent intent = new Intent(pluginContext, USBSerialService.class);
-        pluginContext.startService(intent);
-        pluginContext.bindService(intent, serviceConnection, Context.BIND_AUTO_CREATE);
-    }
-    
-    /**
-     * 服务连接回调
-     */
-    private final ServiceConnection serviceConnection = new ServiceConnection() {
-        @Override
-        public void onServiceConnected(ComponentName name, IBinder service) {
-            USBSerialService.USBSerialBinder binder = (USBSerialService.USBSerialBinder) service;
-            serialService = binder.getService();
-            serviceBound = true;
-            Log.d(TAG, "USB串口服务已连接");
-            updateDeviceStatus();
-        }
-        
-        @Override
-        public void onServiceDisconnected(ComponentName name) {
-            serialService = null;
-            serviceBound = false;
-            Log.d(TAG, "USB串口服务已断开");
-        }
-    };
-    
-    /**
-     * 注册数据接收广播
-     */
-    private void registerDataReceiver() {
-        IntentFilter filter = new IntentFilter();
-        filter.addAction("com.saemaps.android.usbserial.DATA_RECEIVED");
-        pluginContext.registerReceiver(dataReceiver, filter);
-    }
-    
-    /**
-     * 数据接收广播接收器
-     */
-    private final BroadcastReceiver dataReceiver = new BroadcastReceiver() {
-        @Override
-        public void onReceive(Context context, Intent intent) {
-            if ("com.saemaps.android.usbserial.DATA_RECEIVED".equals(intent.getAction())) {
-                byte[] data = intent.getByteArrayExtra("data");
-                if (data != null) {
-                    appendReceivedData(data);
-                }
-            }
-        }
-    };
+        // tvStatus = rootView.findViewById(R.id.tv_status);
+        // tvDevices = rootView.findViewById(R.id.tv_devices);
+        // tvLog = rootView.findViewById(R.id.tv_log);
+        // logScroll = rootView.findViewById(R.id.log_scroll);
 
-    /**************************** PUBLIC METHODS *****************************/
+        // Button btnScan = rootView.findViewById(R.id.btn_scan);
+        // Button btnConnect = rootView.findViewById(R.id.btn_connect_first);
+        // Button btnDisconnect = rootView.findViewById(R.id.btn_disconnect);
+        // Button btnSend = rootView.findViewById(R.id.btn_send_test);
 
+        // btnScan.setOnClickListener(v -> {
+        //     appendLog("Scanning for USB serial devices...");
+        //     serialManager.scanDevices();
+        // });
+        // btnConnect.setOnClickListener(v -> {
+        //     if (discoveredDevices.isEmpty()) {
+        //         appendLog("No devices available to connect.");
+        //     } else {
+        //         UsbDevice device = discoveredDevices.get(0);
+        //         appendLog("Attempting to connect: VID=" + device.getVendorId() + " PID=" + device.getProductId());
+        //         serialManager.connectToDevice(device);
+        //     }
+        // });
+        // btnDisconnect.setOnClickListener(v -> {
+        //     appendLog("Disconnect requested.");
+        //     serialManager.disconnect();
+        // });
+        // btnSend.setOnClickListener(v -> {
+        //     if (!serialManager.isConnected()) {
+        //         appendLog("Cannot send data: no active connection.");
+        //         return;
+        //     }
+        //     try {
+        //         String payload = "USBSerialPlugin:TEST\r\n";
+        //         serialManager.sendString(payload);
+        //         appendLog("Sent test payload: " + payload.trim());
+        //     } catch (IOException e) {
+        //         appendLog("Send failed: " + e.getMessage());
+        //     }
+        // });
+    }
+
+    @Override
     public void disposeImpl() {
-        // 解绑服务
-        if (serviceBound) {
-            pluginContext.unbindService(serviceConnection);
-            serviceBound = false;
-        }
-        
-        // 注销广播接收器
-        try {
-            pluginContext.unregisterReceiver(dataReceiver);
-        } catch (Exception e) {
-            Log.e(TAG, "注销数据接收器失败", e);
-        }
+        serialManager.destroy();
     }
-    
-    /**
-     * 扫描USB设备
-     */
-    private void scanDevices() {
-        if (serialService != null) {
-            serialService.scanDevices();
-            Toast.makeText(pluginContext, "正在扫描USB设备...", Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(pluginContext, "USB串口服务未连接", Toast.LENGTH_SHORT).show();
-        }
-    }
-    
-    /**
-     * 连接到选中的设备
-     */
-    private void connectToSelectedDevice() {
-        if (selectedDevice == null) {
-            Toast.makeText(pluginContext, "请先选择设备", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        
-        if (serialService != null) {
-            // 设置串口参数
-            try {
-                int baudRate = Integer.parseInt(etBaudrate.getText().toString());
-                int dataBits = Integer.parseInt(etDatabits.getText().toString());
-                serialService.setSerialParameters(baudRate, dataBits, 1, 0);
-            } catch (NumberFormatException e) {
-                Toast.makeText(pluginContext, "串口参数格式错误", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            
-            serialService.connectToDevice(selectedDevice);
-            Toast.makeText(pluginContext, "正在连接设备...", Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(pluginContext, "USB串口服务未连接", Toast.LENGTH_SHORT).show();
-        }
-    }
-    
-    /**
-     * 发送数据
-     */
-    private void sendData() {
-        String data = etSendData.getText().toString();
-        if (data.isEmpty()) {
-            Toast.makeText(pluginContext, "请输入要发送的数据", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        
-        if (serialService != null && serialService.isConnected()) {
-            try {
-                serialService.sendString(data + "\n"); // 添加换行符
-                etSendData.setText(""); // 清空输入框
-                Toast.makeText(pluginContext, "数据已发送", Toast.LENGTH_SHORT).show();
-            } catch (IOException e) {
-                Toast.makeText(pluginContext, "发送失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
-            }
-        } else {
-            Toast.makeText(pluginContext, "设备未连接", Toast.LENGTH_SHORT).show();
-        }
-    }
-    
-    /**
-     * 清空接收数据
-     */
-    private void clearReceivedData() {
-        tvReceivedData.setText("等待数据...");
-    }
-    
-    /**
-     * 添加接收到的数据
-     */
-    private void appendReceivedData(byte[] data) {
-        String text = new String(data);
-        String currentText = tvReceivedData.getText().toString();
-        if ("等待数据...".equals(currentText)) {
-            tvReceivedData.setText(text);
-        } else {
-            tvReceivedData.append(text);
-        }
-    }
-    
-    /**
-     * 更新设备状态显示
-     */
-    private void updateDeviceStatus() {
-        if (serialService != null) {
-            if (serialService.isConnected()) {
-                tvDeviceStatus.setText("设备状态: 已连接 - " + serialService.getCurrentDeviceInfo());
-                btnSend.setEnabled(true);
-                btnConnect.setText("断开");
-            } else {
-                tvDeviceStatus.setText("设备状态: 未连接");
-                btnSend.setEnabled(false);
-                btnConnect.setText("连接");
-            }
-        } else {
-            tvDeviceStatus.setText("设备状态: 服务未连接");
-            btnSend.setEnabled(false);
-            btnConnect.setEnabled(false);
-        }
-    }
-    
-    /**
-     * 更新设备列表
-     */
-    private void updateDeviceList(List<UsbDevice> devices) {
-        deviceList.clear();
-        deviceList.addAll(devices);
-        
-        deviceAdapter.clear();
-        for (UsbDevice device : devices) {
-            String deviceInfo = device.getDeviceName() + " (VID:" + device.getVendorId() + 
-                              ", PID:" + device.getProductId() + ")";
-            deviceAdapter.add(deviceInfo);
-        }
-        deviceAdapter.notifyDataSetChanged();
-        
-        if (devices.isEmpty()) {
-            Toast.makeText(pluginContext, "未找到USB串口设备", Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(pluginContext, "找到 " + devices.size() + " 个设备", Toast.LENGTH_SHORT).show();
-        }
-    }
-
-    /**************************** INHERITED METHODS *****************************/
 
     @Override
     public void onReceive(Context context, Intent intent) {
-        Log.d(TAG, "USBSerialDropDownReceiver onReceive called - DEBUG");
-        System.out.println("USBSerialDropDownReceiver onReceive called - SYSTEM OUT");
-
-        final String action = intent.getAction();
-        if (action == null) {
-            Log.w(TAG, "Received intent with null action - DEBUG");
-            System.out.println("USBSerialDropDownReceiver received intent with null action - SYSTEM OUT");
+        if (intent == null || intent.getAction() == null) {
             return;
         }
-
-        Log.d(TAG, "Received action: " + action + " - DEBUG");
-        System.out.println("USBSerialDropDownReceiver received action: " + action + " - SYSTEM OUT");
-
-        if (action.equals(SHOW_PLUGIN)) {
-            Log.d(TAG, "showing plugin drop down - DEBUG");
-            System.out.println("USBSerialDropDownReceiver showing plugin drop down - SYSTEM OUT");
-            
-            // 显示UI界面
-            showDropDown(templateView, HALF_WIDTH, FULL_HEIGHT, FULL_WIDTH,
-                    HALF_HEIGHT, false, this);
-            
-            // 更新设备状态
-            updateDeviceStatus();
-            
-            // 自动扫描设备
-            scanDevices();
-            
-            // PlatformProxy逻辑（保留原有功能）
-            new Thread(()->{
-                PlatformProxy proxy = PlatformProxy.getInstance();
-                if (proxy == null) {
-                    Log.w(TAG, "平台代理未初始化");
-                    return;
-                }
-                
-                while (!proxy.isInit()){
-                    try {
-                        Thread.sleep(5000);
-                    } catch (Exception e) {
-                        e.printStackTrace();
-                    }
-                }
-                Log.d(TAG, "平台代理已初始化");
-            }).start();
+        if (SHOW_PLUGIN.equals(intent.getAction())) {
+            showDropDown(rootView, HALF_WIDTH, FULL_HEIGHT, FULL_WIDTH, HALF_HEIGHT, false, this);
+            serialManager.scanDevices();
         }
     }
 
     @Override
-    public void onDropDownSelectionRemoved() {
-    }
+    public void onDropDownSelectionRemoved() { }
 
     @Override
-    public void onDropDownVisible(boolean v) {
-    }
+    public void onDropDownVisible(boolean v) { }
 
     @Override
-    public void onDropDownSizeChanged(double width, double height) {
-    }
+    public void onDropDownSizeChanged(double width, double height) { }
 
     @Override
     public void onDropDownClose() {
-        // 插件关闭
+        // keep manager alive for background monitoring
+    }
+
+    // === USBSerialListener implementation ===
+
+    @Override
+    public void onDeviceDetected(List<UsbDevice> devices) {
+        discoveredDevices.clear();
+        discoveredDevices.addAll(devices);
+        mainHandler.post(() -> {
+            if (devices.isEmpty()) {
+                tvDevices.setText("No matching USB serial devices detected.");
+            } else {
+                StringBuilder sb = new StringBuilder();
+                for (int i = 0; i < devices.size(); i++) {
+                    UsbDevice device = devices.get(i);
+                    UsbSerialDriver driver = SerialDriverProber.probeDevice(device);
+                    sb.append(i + 1).append('.').append(' ')
+                      .append("VID=").append(device.getVendorId())
+                      .append(" PID=").append(device.getProductId());
+                    if (driver != null) {
+                        sb.append(" driver=").append(driver.getClass().getSimpleName());
+                    }
+                    if (i < devices.size() - 1) {
+                        sb.append('\n');
+                    }
+                }
+                tvDevices.setText(sb.toString());
+            }
+            appendLog("Scan finished: " + devices.size() + " candidate device(s).");
+        });
+    }
+
+    @Override
+    public void onDeviceConnected(UsbDevice device) {
+        mainHandler.post(() -> {
+            tvStatus.setText("Status: connected VID=" + device.getVendorId() + " PID=" + device.getProductId());
+            appendLog("Connected to " + device.getDeviceName());
+        });
+    }
+
+    @Override
+    public void onDeviceDisconnected() {
+        mainHandler.post(() -> {
+            tvStatus.setText("Status: disconnected");
+            appendLog("Serial link closed.");
+        });
+    }
+
+    @Override
+    public void onDataReceived(byte[] data) {
+        mainHandler.post(() -> appendLog("RX: " + bytesToDisplayString(data)));
+    }
+
+    @Override
+    public void onError(Exception error) {
+        mainHandler.post(() -> appendLog("Error: " + (error != null ? error.getMessage() : "unknown")));
+    }
+
+    @Override
+    public void onPermissionDenied(UsbDevice device) {
+        mainHandler.post(() -> appendLog("USB permission denied for VID=" + device.getVendorId() + " PID=" + device.getProductId()));
+    }
+
+    private void appendLog(String message) {
+        String current = tvLog.getText().toString();
+        if ("Waiting...".contentEquals(current) || current.isEmpty()) {
+            tvLog.setText(message);
+        } else {
+            tvLog.append("\n" + message);
+        }
+        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    private static String bytesToDisplayString(byte[] data) {
+        StringBuilder sb = new StringBuilder();
+        for (byte b : data) {
+            int ch = b & 0xFF;
+            if (ch >= 32 && ch <= 126) {
+                sb.append((char) ch);
+            } else {
+                sb.append(String.format("\\x%02X", ch));
+            }
+        }
+        return sb.toString();
     }
 }

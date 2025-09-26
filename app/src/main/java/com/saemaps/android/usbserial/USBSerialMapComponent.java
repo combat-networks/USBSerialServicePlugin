@@ -30,7 +30,7 @@ public class USBSerialMapComponent extends DropDownMapComponent {
     public void onCreate(final Context context, Intent intent,
                          final MapView view) {
 
-        context.setTheme(R.style.ATAKPluginTheme);
+        // context.setTheme(R.style.ATAKPluginTheme); // Theme not available
         super.onCreate(context, intent, view);
         pluginContext = context;
 

@@ -12,290 +12,315 @@ import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
-import android.util.Log;
 
 import androidx.annotation.Nullable;
 import androidx.core.app.NotificationCompat;
 
 import com.saemaps.android.usbserial.USBSerialDropDownReceiver;
 import com.saemaps.android.usbserial.plugin.R;
+import com.saemaps.android.usbserial.terminal.Constants;
+import com.saemaps.android.usbserial.terminal.SerialListener;
+import com.saemaps.android.usbserial.terminal.SerialSocket;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
 
 /**
- * USB串口后台服务
- * 管理串口连接和数据缓冲
+ * Foreground USB serial service bridging USB driver sockets with plugin UI.
  */
-public class USBSerialService extends Service implements USBSerialManager.USBSerialListener {
-    
-    private static final String TAG = "USBSerialService";
-    private static final String CHANNEL_ID = "usb_serial_service";
-    private static final int NOTIFICATION_ID = 1001;
-    
-    private USBSerialManager serialManager;
-    private Handler mainHandler;
-    private boolean isServiceRunning = false;
-    
-    // 数据缓冲
-    private ArrayDeque<byte[]> dataQueue = new ArrayDeque<>();
-    private final Object dataLock = new Object();
-    
-    // 服务绑定
-    public class USBSerialBinder extends Binder {
+public class USBSerialService extends Service implements SerialListener {
+
+    public class SerialBinder extends Binder {
         public USBSerialService getService() {
             return USBSerialService.this;
         }
     }
-    
-    private final IBinder binder = new USBSerialBinder();
-    
-    @Override
-    public void onCreate() {
-        super.onCreate();
-        Log.d(TAG, "USBSerialService onCreate");
-        
-        mainHandler = new Handler(Looper.getMainLooper());
-        serialManager = new USBSerialManager(this);
-        serialManager.setListener(this);
-        
-        createNotificationChannel();
-    }
-    
-    @Override
-    public int onStartCommand(Intent intent, int flags, int startId) {
-        Log.d(TAG, "USBSerialService onStartCommand");
-        
-        if (!isServiceRunning) {
-            startForeground(NOTIFICATION_ID, createNotification("USB串口服务已启动"));
-            isServiceRunning = true;
+
+    private enum QueueType { CONNECT, CONNECT_ERROR, READ, IO_ERROR }
+
+    private static class QueueItem {
+        final QueueType type;
+        ArrayDeque<byte[]> datas;
+        final Exception error;
+
+        QueueItem(QueueType type) {
+            this(type, (Exception) null);
         }
-        
-        return START_STICKY;
+
+        QueueItem(QueueType type, Exception error) {
+            this.type = type;
+            this.error = error;
+            if (type == QueueType.READ) {
+                init();
+            }
+        }
+
+        QueueItem(QueueType type, ArrayDeque<byte[]> datas) {
+            this.type = type;
+            this.error = null;
+            this.datas = datas;
+        }
+
+        void init() {
+            datas = new ArrayDeque<>();
+        }
+
+        void add(byte[] data) {
+            datas.add(data);
+        }
     }
-    
+
+    private final Handler mainLooper = new Handler(Looper.getMainLooper());
+    private final IBinder binder = new SerialBinder();
+    private final ArrayDeque<QueueItem> queue1 = new ArrayDeque<>();
+    private final ArrayDeque<QueueItem> queue2 = new ArrayDeque<>();
+    private final QueueItem lastRead = new QueueItem(QueueType.READ);
+
+    private SerialSocket socket;
+    private SerialListener listener;
+    private boolean connected;
+
+    @Override
+    public void onDestroy() {
+        cancelNotification();
+        disconnect();
+        super.onDestroy();
+    }
+
     @Nullable
     @Override
     public IBinder onBind(Intent intent) {
         return binder;
     }
-    
-    @Override
-    public void onDestroy() {
-        Log.d(TAG, "USBSerialService onDestroy");
-        
-        if (serialManager != null) {
-            serialManager.destroy();
-        }
-        
-        stopForeground(true);
-        isServiceRunning = false;
-        
-        super.onDestroy();
+
+    // ===== Public API =====
+
+    public void connect(SerialSocket socket) throws IOException {
+        socket.connect(this);
+        this.socket = socket;
+        connected = true;
+        initNotification();
     }
-    
-    /**
-     * 创建通知渠道
-     */
-    private void createNotificationChannel() {
+
+    public void disconnect() {
+        connected = false;
+        cancelNotification();
+        if (socket != null) {
+            socket.disconnect();
+            socket = null;
+        }
+    }
+
+    public void write(byte[] data) throws IOException {
+        if (!connected) {
+            throw new IOException("not connected");
+        }
+        socket.write(data);
+    }
+
+    public void attach(SerialListener listener) {
+        if (Looper.getMainLooper().getThread() != Thread.currentThread()) {
+            throw new IllegalArgumentException("attach must be invoked on main thread");
+        }
+        cancelNotification();
+        synchronized (this) {
+            this.listener = listener;
+        }
+        for (QueueItem item : queue1) {
+            dispatchQueued(item, listener);
+        }
+        for (QueueItem item : queue2) {
+            dispatchQueued(item, listener);
+        }
+        queue1.clear();
+        queue2.clear();
+    }
+
+    public void detach() {
+        if (Looper.getMainLooper().getThread() != Thread.currentThread()) {
+            throw new IllegalArgumentException("detach must be invoked on main thread");
+        }
+        synchronized (this) {
+            listener = null;
+        }
+        initNotification();
+    }
+
+    // ===== Notification handling =====
+
+    private void initNotification() {
+        if (!connected) {
+            return;
+        }
+        NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+        if (manager == null) {
+            return;
+        }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             NotificationChannel channel = new NotificationChannel(
-                CHANNEL_ID,
-                "USB串口服务",
-                NotificationManager.IMPORTANCE_LOW
+                    Constants.NOTIFICATION_CHANNEL,
+                    getString(R.string.app_name),
+                    NotificationManager.IMPORTANCE_LOW
             );
-            channel.setDescription("USB串口通信后台服务");
-            channel.setShowBadge(false);
-            
-            NotificationManager manager = getSystemService(NotificationManager.class);
-            if (manager != null) {
-                manager.createNotificationChannel(channel);
-            }
+            channel.setDescription(getString(R.string.notification_channel_description));
+            manager.createNotificationChannel(channel);
         }
+        Notification notification = buildNotification();
+        startForeground(Constants.NOTIFY_MANAGER_START_FOREGROUND_SERVICE, notification);
     }
-    
-    /**
-     * 创建通知
-     */
-    private Notification createNotification(String contentText) {
-        Intent intent = new Intent(this, USBSerialDropDownReceiver.class);
-        intent.setAction(USBSerialDropDownReceiver.SHOW_PLUGIN);
-        PendingIntent pendingIntent = PendingIntent.getBroadcast(
-            this, 0, intent, 
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
+
+    private Notification buildNotification() {
+        Intent disconnectIntent = new Intent(Constants.INTENT_ACTION_DISCONNECT);
+        PendingIntent disconnectPendingIntent = PendingIntent.getBroadcast(
+                this,
+                1,
+                disconnectIntent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
         );
-        
-        return new NotificationCompat.Builder(this, CHANNEL_ID)
-            .setContentTitle("USB串口服务")
-            .setContentText(contentText)
-            .setSmallIcon(R.drawable.ic_launcher)
-            .setContentIntent(pendingIntent)
-            .setOngoing(true)
-            .build();
+
+        Intent showIntent = new Intent(this, USBSerialDropDownReceiver.class);
+        showIntent.setAction(USBSerialDropDownReceiver.SHOW_PLUGIN);
+        PendingIntent showPendingIntent = PendingIntent.getBroadcast(
+                this,
+                2,
+                showIntent,
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
+        );
+
+        return new NotificationCompat.Builder(this, Constants.NOTIFICATION_CHANNEL)
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(getString(R.string.app_name))
+                .setContentText(socket != null ? getString(R.string.notification_connected, socket.getName()) : getString(R.string.notification_service_running))
+                .setContentIntent(showPendingIntent)
+                .setOngoing(true)
+                .addAction(R.drawable.ic_clear_white_24dp, getString(R.string.notification_action_disconnect), disconnectPendingIntent)
+                .build();
     }
-    
-    /**
-     * 更新通知
-     */
-    private void updateNotification(String contentText) {
-        if (isServiceRunning) {
-            Notification notification = createNotification(contentText);
-            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
-            if (manager != null) {
-                manager.notify(NOTIFICATION_ID, notification);
+
+    private void cancelNotification() {
+        stopForeground(true);
+    }
+
+    private void dispatchQueued(QueueItem item, SerialListener target) {
+        switch (item.type) {
+            case CONNECT:
+                target.onSerialConnect();
+                break;
+            case CONNECT_ERROR:
+                target.onSerialConnectError(item.error);
+                break;
+            case READ:
+                target.onSerialRead(item.datas);
+                break;
+            case IO_ERROR:
+                target.onSerialIoError(item.error);
+                break;
+        }
+    }
+
+    // ===== SerialListener implementation =====
+
+    @Override
+    public void onSerialConnect() {
+        if (!connected) {
+            return;
+        }
+        synchronized (this) {
+            if (listener != null) {
+                mainLooper.post(() -> {
+                    if (listener != null) {
+                        listener.onSerialConnect();
+                    } else {
+                        queue1.add(new QueueItem(QueueType.CONNECT));
+                    }
+                });
+            } else {
+                queue2.add(new QueueItem(QueueType.CONNECT));
             }
         }
     }
-    
-    // ========== USB串口管理器回调 ==========
-    
+
     @Override
-    public void onDeviceDetected(java.util.List<android.hardware.usb.UsbDevice> devices) {
-        Log.d(TAG, "检测到 " + devices.size() + " 个USB设备");
-        updateNotification("检测到 " + devices.size() + " 个USB设备");
+    public void onSerialConnectError(Exception e) {
+        if (!connected) {
+            return;
+        }
+        synchronized (this) {
+            if (listener != null) {
+                mainLooper.post(() -> {
+                    if (listener != null) {
+                        listener.onSerialConnectError(e);
+                    } else {
+                        queue1.add(new QueueItem(QueueType.CONNECT_ERROR, e));
+                        disconnect();
+                    }
+                });
+            } else {
+                queue2.add(new QueueItem(QueueType.CONNECT_ERROR, e));
+                disconnect();
+            }
+        }
     }
-    
+
     @Override
-    public void onDeviceConnected(android.hardware.usb.UsbDevice device) {
-        Log.d(TAG, "USB设备已连接: " + device.getDeviceName());
-        updateNotification("已连接: " + device.getDeviceName());
+    public void onSerialRead(ArrayDeque<byte[]> datas) {
+        throw new UnsupportedOperationException();
     }
-    
+
     @Override
-    public void onDeviceDisconnected() {
-        Log.d(TAG, "USB设备已断开");
-        updateNotification("USB设备已断开");
-        
-        // 清空数据队列
-        synchronized (dataLock) {
-            dataQueue.clear();
+    public void onSerialRead(byte[] data) {
+        if (!connected) {
+            return;
+        }
+        synchronized (this) {
+            if (listener != null) {
+                boolean first;
+                synchronized (lastRead) {
+                    first = lastRead.datas.isEmpty();
+                    lastRead.add(data);
+                }
+                if (first) {
+                    mainLooper.post(() -> {
+                        ArrayDeque<byte[]> datas;
+                        synchronized (lastRead) {
+                            datas = lastRead.datas;
+                            lastRead.init();
+                        }
+                        if (listener != null) {
+                            listener.onSerialRead(datas);
+                        } else {
+                            queue1.add(new QueueItem(QueueType.READ, datas));
+                        }
+                    });
+                }
+            } else {
+                if (queue2.isEmpty() || queue2.getLast().type != QueueType.READ) {
+                    queue2.add(new QueueItem(QueueType.READ));
+                }
+                queue2.getLast().add(data);
+            }
         }
     }
-    
+
     @Override
-    public void onDataReceived(byte[] data) {
-        Log.d(TAG, "接收到数据: " + data.length + " 字节");
-        
-        // 将数据添加到队列
-        synchronized (dataLock) {
-            dataQueue.add(data);
+    public void onSerialIoError(Exception e) {
+        if (!connected) {
+            return;
         }
-        
-        // 通知UI更新
-        mainHandler.post(() -> {
-            // 这里可以发送广播通知UI更新
-            Intent intent = new Intent("com.saemaps.android.usbserial.DATA_RECEIVED");
-            intent.putExtra("data", data);
-            sendBroadcast(intent);
-        });
-    }
-    
-    @Override
-    public void onError(Exception error) {
-        Log.e(TAG, "USB串口错误", error);
-        updateNotification("错误: " + error.getMessage());
-    }
-    
-    @Override
-    public void onPermissionDenied(android.hardware.usb.UsbDevice device) {
-        Log.w(TAG, "USB权限被拒绝: " + device.getDeviceName());
-        updateNotification("USB权限被拒绝");
-    }
-    
-    // ========== 公共API ==========
-    
-    /**
-     * 扫描USB设备
-     */
-    public void scanDevices() {
-        if (serialManager != null) {
-            serialManager.scanDevices();
-        }
-    }
-    
-    /**
-     * 连接到设备
-     */
-    public void connectToDevice(android.hardware.usb.UsbDevice device) {
-        if (serialManager != null) {
-            serialManager.connectToDevice(device);
-        }
-    }
-    
-    /**
-     * 断开连接
-     */
-    public void disconnect() {
-        if (serialManager != null) {
-            serialManager.disconnect();
-        }
-    }
-    
-    /**
-     * 发送数据
-     */
-    public void sendData(byte[] data) throws IOException {
-        if (serialManager != null) {
-            serialManager.sendData(data);
-        } else {
-            throw new IOException("串口管理器未初始化");
-        }
-    }
-    
-    /**
-     * 发送字符串
-     */
-    public void sendString(String text) throws IOException {
-        if (serialManager != null) {
-            serialManager.sendString(text);
-        } else {
-            throw new IOException("串口管理器未初始化");
-        }
-    }
-    
-    /**
-     * 设置串口参数
-     */
-    public void setSerialParameters(int baudRate, int dataBits, int stopBits, int parity) {
-        if (serialManager != null) {
-            serialManager.setSerialParameters(baudRate, dataBits, stopBits, parity);
-        }
-    }
-    
-    /**
-     * 获取连接状态
-     */
-    public boolean isConnected() {
-        return serialManager != null && serialManager.isConnected();
-    }
-    
-    /**
-     * 获取当前设备信息
-     */
-    public String getCurrentDeviceInfo() {
-        if (serialManager != null) {
-            return serialManager.getCurrentDeviceInfo();
-        }
-        return "服务未初始化";
-    }
-    
-    /**
-     * 获取数据队列
-     */
-    public ArrayDeque<byte[]> getDataQueue() {
-        synchronized (dataLock) {
-            ArrayDeque<byte[]> result = new ArrayDeque<>(dataQueue);
-            dataQueue.clear();
-            return result;
-        }
-    }
-    
-    /**
-     * 获取数据队列大小
-     */
-    public int getDataQueueSize() {
-        synchronized (dataLock) {
-            return dataQueue.size();
+        synchronized (this) {
+            if (listener != null) {
+                mainLooper.post(() -> {
+                    if (listener != null) {
+                        listener.onSerialIoError(e);
+                    } else {
+                        queue1.add(new QueueItem(QueueType.IO_ERROR, e));
+                        disconnect();
+                    }
+                });
+            } else {
+                queue2.add(new QueueItem(QueueType.IO_ERROR, e));
+                disconnect();
+            }
         }
     }
 }

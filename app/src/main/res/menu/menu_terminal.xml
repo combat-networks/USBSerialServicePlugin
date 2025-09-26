@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto">
+    <item
+        android:id="@+id/clear"
+        android:icon="@drawable/ic_delete_white_24dp"
+        android:title="Clear"
+        android:showAsAction="always" />
+    <item
+        android:id="@+id/newline"
+        android:title="Newline"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/hex"
+        android:title="HEX Mode"
+        android:checkable="true"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/controlLines"
+        android:title="Control Lines"
+        android:checkable="true"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/flowControl"
+        android:title="Flow Control"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/backgroundNotification"
+        android:title="Notification if App in background"
+        android:checkable="true"
+        android:showAsAction="never" />
+    <item
+        android:id="@+id/sendBreak"
+        android:title="Send BREAK"
+        android:showAsAction="never" />
+</menu>

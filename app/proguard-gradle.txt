@@ -7,8 +7,11 @@
 -renamesourcefileattribute SourceFile
 -keepattributes SourceFile,LineNumberTable
 
--applymapping <atak.proguard.mapping>
+# -applymapping <atak.proguard.mapping>
 -repackageclasses atakplugin.PluginTemplate
+
+# Ignore warnings
+-ignorewarnings
 
 -keepattributes *Annotation*
 -keepattributes Signature, InnerClasses

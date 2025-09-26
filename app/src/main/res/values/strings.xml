@@ -2,6 +2,35 @@
 <resources>
     <!-- App -->
     <string name="app_name">USBSerial Plugin</string>
-    <!-- description -->
-    <string name="app_desc">USBSerial插件，基本插件框架</string>
+    <string name="app_desc">USB串口通信插件</string>
+
+    <!-- Notifications -->
+    <string name="notification_channel_description">USB串口通信后台服务</string>
+    <string name="notification_service_running">USB串口后台服务正在运行</string>
+    <string name="notification_connected">已连接到 %1$s</string>
+    <string name="notification_action_disconnect">断开</string>
+
+    <!-- Terminal -->
+    <string name="send_prefix_hex">Send: %1$s</string>
+    <string name="status_not_connected">not connected</string>
+    <string name="status_connected">connected</string>
+    <string name="status_connection_failed">connection failed: %1$s</string>
+    <string name="status_connection_lost">connection lost: %1$s</string>
+    
+    <!-- Device List -->
+    <string name="devices">设备</string>
+    <string name="device_name">设备名称</string>
+    <string name="device_type">设备类型</string>
+    <string name="device_vendor">厂商</string>
+    <string name="device_product">产品</string>
+    
+    <!-- Terminal -->
+    <string name="terminal">终端</string>
+    <string name="send">发送</string>
+    <string name="clear">清除</string>
+    <string name="connect">连接</string>
+    <string name="disconnect">断开</string>
+    <string name="settings">设置</string>
+    <string name="help">帮助</string>
+    <string name="about">关于</string>
 </resources>

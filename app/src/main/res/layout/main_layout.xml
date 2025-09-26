@@ -1,190 +1,85 @@
-<?xml version="1.0" encoding="utf-8"?>
-
-<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+﻿<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
     android:layout_width="match_parent"
-    android:layout_height="wrap_content"
-    android:fadeScrollbars="false"
-    android:layout_marginLeft="3dp"
-    android:layout_marginRight="3dp">
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="16dp">
+
+    <TextView
+        android:id="@+id/tv_status"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Status: Not connected"
+        android:textAppearance="@style/TextAppearance.AppCompat.Medium"
+        android:layout_marginBottom="8dp" />
+
+    <TextView
+        android:id="@+id/tv_devices"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="Devices: None found"
+        android:textAppearance="@style/TextAppearance.AppCompat.Small"
+        android:layout_marginBottom="8dp" />
+
+    <ScrollView
+        android:id="@+id/log_scroll"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:background="@android:color/black"
+        android:padding="8dp">
+
+        <TextView
+            android:id="@+id/tv_log"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="USB Serial Plugin Log\n"
+            android:textColor="@android:color/white"
+            android:textSize="12sp"
+            android:fontFamily="monospace" />
+
+    </ScrollView>
 
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:orientation="vertical" >
+        android:orientation="horizontal"
+        android:layout_marginTop="8dp">
 
-        <!-- 标题 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="@string/app_name"
-            android:textSize="18sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="10dp" />
-
-        <!-- 设备状态 -->
-        <TextView
-            android:id="@+id/tv_device_status"
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="设备状态: 未连接"
-            android:textSize="14sp"
-            android:layout_marginBottom="10dp" />
-
-        <!-- 控制按钮 -->
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="10dp">
-
-            <Button
-                android:id="@+id/btn_scan"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="扫描设备"
-                android:layout_marginEnd="5dp" />
-
-            <Button
-                android:id="@+id/btn_connect"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="连接"
-                android:layout_marginStart="5dp"
-                android:enabled="false" />
-
-        </LinearLayout>
-
-        <!-- 设备列表 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="可用设备:"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="5dp" />
-
-        <ListView
-            android:id="@+id/lv_devices"
-            android:layout_width="match_parent"
-            android:layout_height="120dp"
-            android:layout_marginBottom="10dp" />
-
-        <!-- 串口参数设置 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="串口参数:"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="5dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="5dp">
-
-            <TextView
-                android:layout_width="60dp"
-                android:layout_height="wrap_content"
-                android:text="波特率:"
-                android:textSize="12sp" />
-
-            <EditText
-                android:id="@+id/et_baudrate"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="115200"
-                android:inputType="number"
-                android:textSize="12sp" />
-
-            <TextView
-                android:layout_width="60dp"
-                android:layout_height="wrap_content"
-                android:text="数据位:"
-                android:textSize="12sp"
-                android:layout_marginStart="10dp" />
-
-            <EditText
-                android:id="@+id/et_databits"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:text="8"
-                android:inputType="number"
-                android:textSize="12sp" />
-
-        </LinearLayout>
-
-        <!-- 数据发送区域 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="发送数据:"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="5dp" />
-
-        <LinearLayout
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:orientation="horizontal"
-            android:layout_marginBottom="10dp">
-
-            <EditText
-                android:id="@+id/et_send_data"
-                android:layout_width="0dp"
-                android:layout_height="wrap_content"
-                android:layout_weight="1"
-                android:hint="输入要发送的数据"
-                android:textSize="12sp" />
-
-            <Button
-                android:id="@+id/btn_send"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:text="发送"
-                android:layout_marginStart="5dp"
-                android:enabled="false" />
-
-        </LinearLayout>
-
-        <!-- 接收数据显示 -->
-        <TextView
-            android:layout_width="wrap_content"
-            android:layout_height="wrap_content"
-            android:text="接收数据:"
-            android:textSize="14sp"
-            android:textStyle="bold"
-            android:layout_marginBottom="5dp" />
-
-        <ScrollView
-            android:layout_width="match_parent"
-            android:layout_height="150dp"
-            android:background="#f0f0f0"
-            android:padding="5dp">
-
-            <TextView
-                android:id="@+id/tv_received_data"
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:text="等待数据..."
-                android:textSize="12sp"
-                android:fontFamily="monospace" />
-
-        </ScrollView>
-
-        <!-- 清空按钮 -->
         <Button
-            android:id="@+id/btn_clear"
-            android:layout_width="wrap_content"
+            android:id="@+id/btn_scan"
+            android:layout_width="0dp"
             android:layout_height="wrap_content"
-            android:text="清空接收区"
-            android:layout_gravity="end"
-            android:layout_marginTop="5dp" />
+            android:layout_weight="1"
+            android:text="Scan"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_connect_first"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Connect"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_disconnect"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Disconnect"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_send_test"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Test"
+            android:layout_marginStart="4dp" />
 
     </LinearLayout>
-</ScrollView>
+
+</LinearLayout>

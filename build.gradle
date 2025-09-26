@@ -25,19 +25,3 @@ allprojects {
 task clean(type: Delete) {
     delete rootProject.buildDir
 }
-
-task printKeyPath {
-    doLast {
-        // 读取 local.properties
-        def localProps = new Properties()
-        def localPropsFile = rootProject.file("local.properties")
-        if (localPropsFile.exists()) {
-            localProps.load(new FileInputStream(localPropsFile))
-        }
-
-        // 取出 takDebugKeyFile
-        def debugKeyPath = localProps.getProperty("takDebugKeyFile")
-        println ">>> takDebugKeyFile (raw): " + debugKeyPath
-        println ">>> takDebugKeyFile (absolute): " + file(debugKeyPath).absolutePath
-    }
-}
