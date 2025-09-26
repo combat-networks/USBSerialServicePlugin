@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- USB设备过滤器，支持常见的USB转串口芯片 -->
+    
+    <!-- FTDI设备 -->
+    <usb-device vendor-id="1027" product-id="24577" /> <!-- FT232 -->
+    <usb-device vendor-id="1027" product-id="24596" /> <!-- FT2232 -->
+    <usb-device vendor-id="1027" product-id="24597" /> <!-- FT232H -->
+    
+    <!-- Prolific设备 -->
+    <usb-device vendor-id="1659" product-id="8965" />  <!-- PL2303 -->
+    
+    <!-- Silabs设备 -->
+    <usb-device vendor-id="4292" product-id="60000" /> <!-- CP2102 -->
+    <usb-device vendor-id="4292" product-id="60016" /> <!-- CP2105 -->
+    <usb-device vendor-id="4292" product-id="60032" /> <!-- CP2108 -->
+    
+    <!-- Qinheng设备 -->
+    <usb-device vendor-id="6790" product-id="29987" /> <!-- CH340 -->
+    <usb-device vendor-id="6790" product-id="29988" /> <!-- CH341 -->
+    
+    <!-- Arduino设备 -->
+    <usb-device vendor-id="9025" product-id="67" />    <!-- Arduino Leonardo -->
+    <usb-device vendor-id="9025" product-id="32822" /> <!-- Arduino Micro -->
+    
+    <!-- BBC micro:bit -->
+    <usb-device vendor-id="3368" product-id="516" />   <!-- BBC micro:bit -->
+    
+    <!-- 通用CDC设备 -->
+    <usb-device class="2" subclass="2" protocol="1" />
+</resources>

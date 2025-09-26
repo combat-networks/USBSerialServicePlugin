@@ -1,0 +1,68 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    package="com.saemaps.android.usbserial.plugin"
+    tools:ignore="GoogleAppIndexingWarning">
+
+    <!-- 网络权限 -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    
+    <!-- USB权限 -->
+    <uses-permission android:name="android.permission.USB_PERMISSION" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="true" />
+
+    <application 
+        android:allowBackup="false"
+        android:icon="@drawable/ic_launcher"
+        android:label="@string/app_name"
+        android:description="@string/app_desc"
+        android:extractNativeLibs="true"
+        android:theme="@style/AppTheme" >
+        <meta-data android:name="plugin-api" android:value="${atakApiVersion}"/>
+        <meta-data android:name="app_desc" android:value="@string/app_desc"/>
+
+
+        <!-- 插件生命周期管理 -->
+        <service
+            android:name=".USBSerialLifecycle"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- 地图组件 -->
+        <service
+            android:name=".USBSerialMapComponent"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- USB串口服务 -->
+        <service
+            android:name=".usbserial.USBSerialService"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- 下拉菜单接收器 -->
+        <receiver
+            android:name=".USBSerialDropDownReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.saemaps.android.usbserial.SHOW_PLUGIN" />
+            </intent-filter>
+        </receiver>
+        
+        <!-- USB设备过滤器 -->
+        <activity-alias
+            android:name=".UsbDeviceAttachedActivity"
+            android:exported="true"
+            android:targetActivity=".USBSerialDropDownReceiver">
+            <intent-filter>
+                <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
+            </intent-filter>
+            <meta-data
+                android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
+                android:resource="@xml/usb_device_filter" />
+        </activity-alias>
+
+    </application>
+
+</manifest>

@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- App -->
+    <string name="app_name">USBSerial Plugin</string>
+    <!-- description -->
+    <string name="app_desc">USBSerial插件，基本插件框架</string>
+</resources>

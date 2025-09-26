@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="utf-8"?>
+<PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- USB串口通信设置 -->
+    <PreferenceCategory
+        android:key="usb_serial_category"
+        android:title="USB串口通信设置" />
+
+    <!-- 波特率设置 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="usb_serial_baudrate"
+        android:title="波特率"
+        android:summary="设置串口通信波特率，默认115200"
+        android:defaultValue="115200"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入波特率" />
+
+    <!-- 数据位设置 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="usb_serial_databits"
+        android:title="数据位"
+        android:summary="设置数据位，默认8位"
+        android:defaultValue="8"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入数据位" />
+
+    <!-- 停止位设置 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="usb_serial_stopbits"
+        android:title="停止位"
+        android:summary="设置停止位，默认1位"
+        android:defaultValue="1"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入停止位" />
+
+    <!-- 奇偶校验设置 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="usb_serial_parity"
+        android:title="奇偶校验"
+        android:summary="设置奇偶校验，0=无，1=奇校验，2=偶校验"
+        android:defaultValue="0"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入奇偶校验" />
+
+    <!-- 设备连接设置 -->
+    <PreferenceCategory
+        android:key="device_connection_category"
+        android:title="设备连接设置" />
+
+    <!-- 自动连接开关 -->
+    <com.saemaps.android.gui.PanPreference
+        android:key="usb_auto_connect"
+        android:title="自动连接"
+        android:summary="启动时自动连接USB设备" />
+
+    <!-- 设备扫描间隔 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="usb_scan_interval"
+        android:title="扫描间隔(秒)"
+        android:summary="USB设备扫描间隔时间"
+        android:defaultValue="3"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入扫描间隔" />
+
+    <!-- 调试设置 -->
+    <PreferenceCategory
+        android:key="debug_category"
+        android:title="调试设置" />
+
+    <!-- 调试日志开关 -->
+    <com.saemaps.android.gui.PanPreference
+        android:key="usb_debug_log"
+        android:title="调试日志"
+        android:summary="启用USB通信调试日志输出" />
+
+    <!-- 测试数据发送间隔 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="usb_test_interval"
+        android:title="测试间隔(秒)"
+        android:summary="测试数据发送间隔时间"
+        android:defaultValue="3"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入测试间隔" />
+
+    <!-- 网络通信设置 -->
+    <PreferenceCategory
+        android:key="network_category"
+        android:title="网络通信设置" />
+
+    <!-- TCP服务器地址 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="tcp_server_address"
+        android:title="TCP服务器地址"
+        android:summary="CoT数据TCP发送目标地址"
+        android:defaultValue="192.168.1.100"
+        android:inputType="text"
+        android:dialogTitle="请输入TCP服务器地址" />
+
+    <!-- TCP端口 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="tcp_server_port"
+        android:title="TCP端口"
+        android:summary="TCP服务器端口号"
+        android:defaultValue="8080"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入TCP端口" />
+
+    <!-- UDP组播地址 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="udp_multicast_address"
+        android:title="UDP组播地址"
+        android:summary="CoT数据UDP组播地址"
+        android:defaultValue="239.2.3.1"
+        android:inputType="text"
+        android:dialogTitle="请输入UDP组播地址" />
+
+    <!-- UDP端口 -->
+    <com.saemaps.android.gui.PanEditTextPreference
+        android:key="udp_multicast_port"
+        android:title="UDP端口"
+        android:summary="UDP组播端口号"
+        android:defaultValue="6969"
+        android:inputType="number"
+        android:numeric="integer"
+        android:dialogTitle="请输入UDP端口" />
+
+</PreferenceScreen>
