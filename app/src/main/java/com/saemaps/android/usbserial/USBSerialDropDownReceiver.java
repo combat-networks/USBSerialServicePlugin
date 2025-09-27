@@ -46,54 +46,54 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
     public USBSerialDropDownReceiver(MapView mapView, Context context) {
         super(mapView);
         this.pluginContext = context;
-        // rootView = PluginLayoutInflater.inflate(context, R.layout.main_layout, null);
-        rootView = new LinearLayout(context);
+        rootView = PluginLayoutInflater.inflate(context, R.layout.main_layout, null);
+        // rootView = new LinearLayout(context);
         initViews();
         serialManager = new USBSerialManager(context.getApplicationContext());
         serialManager.setListener(this);
     }
 
     private void initViews() {
-        // tvStatus = rootView.findViewById(R.id.tv_status);
-        // tvDevices = rootView.findViewById(R.id.tv_devices);
-        // tvLog = rootView.findViewById(R.id.tv_log);
-        // logScroll = rootView.findViewById(R.id.log_scroll);
+        tvStatus = rootView.findViewById(R.id.tv_status);
+        tvDevices = rootView.findViewById(R.id.tv_devices);
+        tvLog = rootView.findViewById(R.id.tv_log);
+        logScroll = rootView.findViewById(R.id.log_scroll);
 
-        // Button btnScan = rootView.findViewById(R.id.btn_scan);
-        // Button btnConnect = rootView.findViewById(R.id.btn_connect_first);
-        // Button btnDisconnect = rootView.findViewById(R.id.btn_disconnect);
-        // Button btnSend = rootView.findViewById(R.id.btn_send_test);
+        Button btnScan = rootView.findViewById(R.id.btn_scan);
+        Button btnConnect = rootView.findViewById(R.id.btn_connect_first);
+        Button btnDisconnect = rootView.findViewById(R.id.btn_disconnect);
+        Button btnSend = rootView.findViewById(R.id.btn_send_test);
 
-        // btnScan.setOnClickListener(v -> {
-        //     appendLog("Scanning for USB serial devices...");
-        //     serialManager.scanDevices();
-        // });
-        // btnConnect.setOnClickListener(v -> {
-        //     if (discoveredDevices.isEmpty()) {
-        //         appendLog("No devices available to connect.");
-        //     } else {
-        //         UsbDevice device = discoveredDevices.get(0);
-        //         appendLog("Attempting to connect: VID=" + device.getVendorId() + " PID=" + device.getProductId());
-        //         serialManager.connectToDevice(device);
-        //     }
-        // });
-        // btnDisconnect.setOnClickListener(v -> {
-        //     appendLog("Disconnect requested.");
-        //     serialManager.disconnect();
-        // });
-        // btnSend.setOnClickListener(v -> {
-        //     if (!serialManager.isConnected()) {
-        //         appendLog("Cannot send data: no active connection.");
-        //         return;
-        //     }
-        //     try {
-        //         String payload = "USBSerialPlugin:TEST\r\n";
-        //         serialManager.sendString(payload);
-        //         appendLog("Sent test payload: " + payload.trim());
-        //     } catch (IOException e) {
-        //         appendLog("Send failed: " + e.getMessage());
-        //     }
-        // });
+        btnScan.setOnClickListener(v -> {
+            appendLog("Scanning for USB serial devices...");
+            serialManager.scanDevices();
+        });
+        btnConnect.setOnClickListener(v -> {
+            if (discoveredDevices.isEmpty()) {
+                appendLog("No devices available to connect.");
+            } else {
+                UsbDevice device = discoveredDevices.get(0);
+                appendLog("Attempting to connect: VID=" + device.getVendorId() + " PID=" + device.getProductId());
+                serialManager.connectToDevice(device);
+            }
+        });
+        btnDisconnect.setOnClickListener(v -> {
+            appendLog("Disconnect requested.");
+            serialManager.disconnect();
+        });
+        btnSend.setOnClickListener(v -> {
+            if (!serialManager.isConnected()) {
+                appendLog("Cannot send data: no active connection.");
+                return;
+            }
+            try {
+                String payload = "USBSerialPlugin:TEST\r\n";
+                serialManager.sendString(payload);
+                appendLog("Sent test payload: " + payload.trim());
+            } catch (IOException e) {
+                appendLog("Send failed: " + e.getMessage());
+            }
+        });
     }
 
     @Override

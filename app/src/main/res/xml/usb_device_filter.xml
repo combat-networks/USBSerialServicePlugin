@@ -6,25 +6,49 @@
     <usb-device vendor-id="1027" product-id="24577" /> <!-- FT232 -->
     <usb-device vendor-id="1027" product-id="24596" /> <!-- FT2232 -->
     <usb-device vendor-id="1027" product-id="24597" /> <!-- FT232H -->
+    <usb-device vendor-id="1027" product-id="24598" /> <!-- FT2232H -->
+    <usb-device vendor-id="1027" product-id="24599" /> <!-- FT4232H -->
     
     <!-- Prolific设备 -->
     <usb-device vendor-id="1659" product-id="8965" />  <!-- PL2303 -->
+    <usb-device vendor-id="1659" product-id="8963" />  <!-- PL2303HX -->
     
     <!-- Silabs设备 -->
     <usb-device vendor-id="4292" product-id="60000" /> <!-- CP2102 -->
     <usb-device vendor-id="4292" product-id="60016" /> <!-- CP2105 -->
     <usb-device vendor-id="4292" product-id="60032" /> <!-- CP2108 -->
+    <usb-device vendor-id="4292" product-id="60048" /> <!-- CP2109 -->
     
     <!-- Qinheng设备 -->
     <usb-device vendor-id="6790" product-id="29987" /> <!-- CH340 -->
     <usb-device vendor-id="6790" product-id="29988" /> <!-- CH341 -->
+    <usb-device vendor-id="6790" product-id="29989" /> <!-- CH342 -->
     
     <!-- Arduino设备 -->
     <usb-device vendor-id="9025" product-id="67" />    <!-- Arduino Leonardo -->
     <usb-device vendor-id="9025" product-id="32822" /> <!-- Arduino Micro -->
+    <usb-device vendor-id="9025" product-id="32823" /> <!-- Arduino Due -->
+    <usb-device vendor-id="9025" product-id="32824" /> <!-- Arduino Mega ADK -->
+    
+    <!-- Teensy设备 -->
+    <usb-device vendor-id="5824" product-id="1155" />  <!-- Teensy 2.0 -->
+    <usb-device vendor-id="5824" product-id="1156" />  <!-- Teensy 2.0++ -->
+    <usb-device vendor-id="5824" product-id="1157" />  <!-- Teensy 3.0 -->
+    <usb-device vendor-id="5824" product-id="1158" />  <!-- Teensy 3.1 -->
+    <usb-device vendor-id="5824" product-id="1159" />  <!-- Teensy 3.2 -->
+    <usb-device vendor-id="5824" product-id="1160" />  <!-- Teensy 3.5 -->
+    <usb-device vendor-id="5824" product-id="1161" />  <!-- Teensy 3.6 -->
+    <usb-device vendor-id="5824" product-id="1162" />  <!-- Teensy 4.0 -->
+    <usb-device vendor-id="5824" product-id="1163" />  <!-- Teensy 4.1 -->
+    
+    <!-- Raspberry Pi Pico -->
+    <usb-device vendor-id="11914" product-id="5" />    <!-- Raspberry Pi Pico -->
     
     <!-- BBC micro:bit -->
     <usb-device vendor-id="3368" product-id="516" />   <!-- BBC micro:bit -->
+    
+    <!-- Atmel LUFA设备 -->
+    <usb-device vendor-id="5824" product-id="1153" />  <!-- Atmel LUFA -->
     
     <!-- 通用CDC设备 -->
     <usb-device class="2" subclass="2" protocol="1" />
