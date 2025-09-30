@@ -11,8 +11,8 @@ public class PlatformProxy {
 
     private static PlatformProxy instance;
     private static Class<?> clazz;
-    private  ClassLoader platformClassLoader;
-    private  Object platformComp;
+    private ClassLoader platformClassLoader;
+    private Object platformComp;
 
     private PlatformProxy(Class<?> clazz) {
         PlatformProxy.clazz = clazz;
@@ -25,7 +25,7 @@ public class PlatformProxy {
         }
     }
 
-    public boolean isInit(){
+    public boolean isInit() {
         return instance != null;
     }
 
@@ -80,6 +80,3 @@ public class PlatformProxy {
         }
     }
 }
-
-
-

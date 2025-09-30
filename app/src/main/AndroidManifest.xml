@@ -9,6 +9,8 @@
     
     <!-- USB权限 -->
     <uses-permission android:name="android.permission.USB_PERMISSION" />
+    
+    <!-- USB功能 -->
     <uses-feature android:name="android.hardware.usb.host" android:required="true" />
 
     <application 
@@ -24,44 +26,61 @@
 
         <!-- 插件生命周期管理 -->
         <service
-            android:name=".USBSerialLifecycle"
+            android:name="com.saemaps.android.usbserial.USBSerialLifecycle"
             android:enabled="true"
             android:exported="false" />
 
         <!-- 地图组件 -->
         <service
-            android:name=".USBSerialMapComponent"
+            android:name="com.saemaps.android.usbserial.USBSerialMapComponent"
             android:enabled="true"
             android:exported="false" />
 
         <!-- USB串口服务 -->
         <service
-            android:name=".usbserial.USBSerialService"
+            android:name="com.saemaps.android.usbserial.usbserial.USBSerialService"
             android:enabled="true"
             android:exported="false" />
 
-        <!-- 下拉菜单接收器 -->
-        <receiver
-            android:name=".USBSerialDropDownReceiver"
-            android:enabled="true"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="com.saemaps.android.usbserial.SHOW_PLUGIN" />
-            </intent-filter>
-        </receiver>
         
         <!-- USB设备过滤器 -->
-        <activity-alias
-            android:name=".UsbDeviceAttachedActivity"
+        <activity
+            android:name="com.saemaps.android.usbserial.UsbDeviceAttachedActivity"
             android:exported="true"
-            android:targetActivity=".USBSerialDropDownReceiver">
+            android:theme="@android:style/Theme.Translucent.NoTitleBar">
             <intent-filter>
                 <action android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED" />
             </intent-filter>
             <meta-data
                 android:name="android.hardware.usb.action.USB_DEVICE_ATTACHED"
                 android:resource="@xml/usb_device_filter" />
-        </activity-alias>
+        </activity>
+
+        <!-- 工具组件 -->
+        <service
+            android:name="com.saemaps.android.usbserial.USBSerialTool"
+            android:enabled="true"
+            android:exported="false" />
+
+        <!-- 下拉面板接收器 -->
+        <receiver
+            android:name="com.saemaps.android.usbserial.USBSerialTestReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.saemaps.android.usbserial.SHOW_PLUGIN" />
+            </intent-filter>
+        </receiver>
+
+        <!-- USB权限广播接收器 -->
+        <receiver
+            android:name="com.saemaps.android.usbserial.USBSerialPermissionReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.saemaps.android.usbserial.plugin.GRANT_USB" />
+            </intent-filter>
+        </receiver>
 
     </application>
 

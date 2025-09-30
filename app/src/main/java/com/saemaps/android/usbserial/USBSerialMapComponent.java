@@ -12,7 +12,6 @@ import com.saemaps.android.dropdown.DropDownMapComponent;
 
 import com.saemaps.android.usbserial.PluginComponent;
 import com.saemaps.coremap.log.Log;
-import com.saemaps.android.usbserial.plugin.R;
 
 public class USBSerialMapComponent extends DropDownMapComponent {
 
@@ -28,7 +27,7 @@ public class USBSerialMapComponent extends DropDownMapComponent {
     private USBSerialDropDownReceiver ddr;
 
     public void onCreate(final Context context, Intent intent,
-                         final MapView view) {
+            final MapView view) {
 
         // context.setTheme(R.style.ATAKPluginTheme); // Theme not available
         super.onCreate(context, intent, view);
@@ -37,6 +36,9 @@ public class USBSerialMapComponent extends DropDownMapComponent {
         Log.d(TAG, "USBSerialMapComponent onCreate called - DEBUG");
         System.out.println("USBSerialMapComponent onCreate called - SYSTEM OUT");
 
+        Log.d(TAG, "context is null: " + (context == null));
+        Log.d(TAG, "view is null: " + (view == null));
+
         ddr = new USBSerialDropDownReceiver(
                 view, context);
 
@@ -44,12 +46,12 @@ public class USBSerialMapComponent extends DropDownMapComponent {
         DocumentedIntentFilter ddFilter = new DocumentedIntentFilter();
         ddFilter.addAction(USBSerialDropDownReceiver.SHOW_PLUGIN);
         registerDropDownReceiver(ddr, ddFilter);
-        
+
         Log.d(TAG, "USBSerialMapComponent registration completed - DEBUG");
         System.out.println("USBSerialMapComponent registration completed - SYSTEM OUT");
 
-        new Thread( ()->{
-            while (!PluginComponent.isInit()){
+        new Thread(() -> {
+            while (!PluginComponent.isInit()) {
                 Intent register = new Intent(REGISTER_MODEL_PLUGIN);
                 register.putExtra("info", PluginComponent.class);
                 AtakBroadcast.getInstance().sendBroadcast(register);
@@ -59,7 +61,7 @@ public class USBSerialMapComponent extends DropDownMapComponent {
                     e.printStackTrace();
                 }
             }
-        } ).start();
+        }).start();
 
     }
 

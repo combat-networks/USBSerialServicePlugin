@@ -9,6 +9,9 @@ import android.content.Context;
 import android.content.Intent;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.util.Log;
 import android.view.ViewGroup;
 import transapps.mapi.MapView;
 import transapps.maps.plugin.tool.Group;
@@ -17,6 +20,7 @@ import transapps.maps.plugin.tool.ToolDescriptor;
 
 public class USBSerialTool extends Tool implements ToolDescriptor {
 
+    private static final String TAG = "USBSerialTool";
     private final Context context;
 
     public USBSerialTool(Context context) {
@@ -56,16 +60,18 @@ public class USBSerialTool extends Tool implements ToolDescriptor {
             Bundle arg3,
             ToolCallback arg4) {
 
+        Log.d(TAG, "USBSerialTool onActivate called");
+
         // Hack to close the dropdown that automatically opens when a tool
         // plugin is activated.
         if (arg4 != null) {
+            Log.d(TAG, "Calling onToolDeactivated to close auto-opened dropdown");
             arg4.onToolDeactivated(this);
         }
-        // Intent to launch the dropdown or tool
 
-        //arg2.setVisibility(ViewGroup.INVISIBLE);
-        Intent i = new Intent(
-                USBSerialDropDownReceiver.SHOW_PLUGIN);
+        // Send broadcast to show the dropdown
+        Log.d(TAG, "Sending SHOW_PLUGIN broadcast");
+        Intent i = new Intent(USBSerialDropDownReceiver.SHOW_PLUGIN);
         AtakBroadcast.getInstance().sendBroadcast(i);
     }
 

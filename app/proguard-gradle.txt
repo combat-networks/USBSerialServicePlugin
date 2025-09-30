@@ -60,7 +60,33 @@
 -keep class module-info
 
 # Keep USB serial drivers to prevent R8/ProGuard from removing them
+-keep class com.hoho.android.usbserial.** { *; }
 -keep class com.hoho.android.usbserial.driver.** { *; }
 -keep class com.hoho.android.usbserial.util.** { *; }
--keep class com.hoho.android.usbserial.** { *; }
+-keep class com.hoho.android.usbserial.driver.CommonUsbSerialPort { *; }
+-keep class com.hoho.android.usbserial.driver.UsbSerialDriver { *; }
+-keep class com.hoho.android.usbserial.driver.Ch34xSerialDriver { *; }
+-keep class com.hoho.android.usbserial.driver.Ch34xSerialDriver$* { *; }
+-keep class com.hoho.android.usbserial.driver.Cp21xxSerialDriver { *; }
+-keep class com.hoho.android.usbserial.driver.Cp21xxSerialDriver$* { *; }
+-keep class com.hoho.android.usbserial.driver.FtdiSerialDriver { *; }
+-keep class com.hoho.android.usbserial.driver.FtdiSerialDriver$* { *; }
+-keep class com.hoho.android.usbserial.driver.ProlificSerialDriver { *; }
+-keep class com.hoho.android.usbserial.driver.ProlificSerialDriver$* { *; }
+-keep class com.hoho.android.usbserial.driver.CdcAcmSerialDriver { *; }
+-keep class com.hoho.android.usbserial.driver.CdcAcmSerialDriver$* { *; }
+
+# Keep all USB serial port classes and their inner classes
+-keepclassmembers class com.hoho.android.usbserial.driver.** {
+    public *;
+    protected *;
+    private *;
+}
+
+# Keep all constructors and methods for USB serial classes
+-keepclassmembers class com.hoho.android.usbserial.** {
+    <init>(...);
+    public <methods>;
+    protected <methods>;
+}
 
