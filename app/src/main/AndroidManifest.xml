@@ -24,17 +24,8 @@
         <meta-data android:name="app_desc" android:value="@string/app_desc"/>
 
 
-        <!-- 插件生命周期管理 -->
-        <service
-            android:name="com.saemaps.android.usbserial.USBSerialLifecycle"
-            android:enabled="true"
-            android:exported="false" />
-
-        <!-- 地图组件 -->
-        <service
-            android:name="com.saemaps.android.usbserial.USBSerialMapComponent"
-            android:enabled="true"
-            android:exported="false" />
+        <!-- 插件生命周期管理 - 这些不是Service，而是组件类 -->
+        <!-- USBSerialLifecycle 和 USBSerialMapComponent 是插件组件，不需要在manifest中声明 -->
 
         <!-- USB串口服务 -->
         <service
@@ -56,15 +47,11 @@
                 android:resource="@xml/usb_device_filter" />
         </activity>
 
-        <!-- 工具组件 -->
-        <service
-            android:name="com.saemaps.android.usbserial.USBSerialTool"
-            android:enabled="true"
-            android:exported="false" />
+        <!-- 工具组件 - USBSerialTool是工具类，不需要在manifest中声明 -->
 
         <!-- 下拉面板接收器 -->
         <receiver
-            android:name="com.saemaps.android.usbserial.USBSerialTestReceiver"
+            android:name="com.saemaps.android.usbserial.USBSerialDropDownReceiver"
             android:enabled="true"
             android:exported="true">
             <intent-filter>

@@ -37,10 +37,17 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
     private TextView tvDevices;
     private TextView tvLog;
     private ScrollView logScroll;
+    private TextView tvPacketStats;
 
     // 使用现有的USB串口管理器
     private USBSerialManager usbSerialManager;
     private List<UsbDevice> detectedDevices = new ArrayList<>();
+
+    // 数据包统计
+    private int totalPackets = 0;
+    private int powerOnPackets = 0;
+    private int idQueryPackets = 0;
+    private int locationPackets = 0;
 
     public USBSerialDropDownReceiver(MapView mapView, Context context) {
         super(mapView);
@@ -49,7 +56,7 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
 
         try {
             Log.d(TAG, "About to inflate layout");
-            rootView = PluginLayoutInflater.inflate(context, R.layout.main_layout, null);
+            rootView = PluginLayoutInflater.inflate(context, R.layout.usb_serial_layout, null);
             Log.d(TAG, "Layout inflated, rootView: " + (rootView != null ? "not null" : "null"));
 
             initViews();
@@ -79,6 +86,7 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                             mainHandler.post(() -> {
                                 appendLog("✅ 设备已连接: " + device.getVendorId() + ":" + device.getProductId());
                                 tvStatus.setText("Status: 已连接到 " + device.getVendorId() + ":" + device.getProductId());
+                                resetPacketStats(); // 重置数据包统计
                             });
                         }
 
@@ -98,13 +106,12 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                                 Log.d(TAG, "🎯 tvLog is null: " + (tvLog == null));
                                 Log.d(TAG, "🎯 logScroll is null: " + (logScroll == null));
 
-                                // 🔧 修复：将二进制数据转换为十六进制显示
-                                String hexData = bytesToHex(data);
-                                String dataInfo = String.format("📥 收到数据 (%d字节): %s", data.length, hexData);
-                                Log.d(TAG, "🎯 About to append log: " + dataInfo);
+                                // 🎯 增强：解析和格式化显示数据包
+                                String packetInfo = formatPacketDisplay(data);
+                                Log.d(TAG, "🎯 About to append log: " + packetInfo);
 
                                 if (tvLog != null) {
-                                    appendLog(dataInfo);
+                                    appendLog(packetInfo);
                                     Log.d(TAG, "🎯 Log appended successfully");
                                 } else {
                                     Log.e(TAG, "🎯 tvLog is null, cannot append log");
@@ -155,6 +162,7 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
             tvDevices = rootView.findViewById(R.id.tv_devices);
             tvLog = rootView.findViewById(R.id.tv_log);
             logScroll = rootView.findViewById(R.id.log_scroll);
+            tvPacketStats = rootView.findViewById(R.id.tv_packet_stats);
 
             Log.d(TAG, "TextViews found - Status: " + (tvStatus != null ? "yes" : "no") +
                     ", Devices: " + (tvDevices != null ? "yes" : "no") +
@@ -165,6 +173,8 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
             Button btnConnect = rootView.findViewById(R.id.btn_connect_first);
             Button btnDisconnect = rootView.findViewById(R.id.btn_disconnect);
             Button btnSend = rootView.findViewById(R.id.btn_send_test);
+            Button btnClearLog = rootView.findViewById(R.id.btn_clear_log);
+            Button btnResetStats = rootView.findViewById(R.id.btn_reset_stats);
 
             Log.d(TAG, "Buttons found - Scan: " + (btnScan != null ? "yes" : "no") +
                     ", Connect: " + (btnConnect != null ? "yes" : "no") +
@@ -223,6 +233,20 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                 } catch (Exception e) {
                     appendLog("❌ 发送测试数据失败: " + e.getMessage());
                 }
+            });
+
+            // 清除日志按钮
+            btnClearLog.setOnClickListener(v -> {
+                if (tvLog != null) {
+                    tvLog.setText("USB Serial Plugin Log\n");
+                    appendLog("🧹 日志已清除");
+                }
+            });
+
+            // 重置统计按钮
+            btnResetStats.setOnClickListener(v -> {
+                resetPacketStats();
+                appendLog("📊 数据包统计已重置");
             });
 
             Log.d(TAG, "initViews completed successfully");
@@ -324,6 +348,177 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
             result.append(String.format("%02X ", b));
         }
         return result.toString().trim();
+    }
+
+    /**
+     * 🎯 增强：格式化数据包显示，包含解析信息
+     */
+    private String formatPacketDisplay(byte[] data) {
+        StringBuilder display = new StringBuilder();
+
+        // 基本信息
+        display.append(String.format("📥 数据包 (%d字节): ", data.length));
+
+        // 检查是否为有效的数据包格式
+        if (data.length >= 4) {
+            // 验证包头 - 修复字节序问题
+            // 存储方式: 0x68 0x00 (大端序)，接收时应该强制转换为 0x0068
+            int header = ((data[1] & 0xFF) << 8) | (data[0] & 0xFF);
+            if (header == 0x0068) {
+                // 解析包信息
+                int packetDataLength = data[2] & 0xFF;
+                int commandType = data[3] & 0xFF;
+                int totalLength = packetDataLength + 3;
+
+                // 检查包长度是否匹配
+                if (data.length == totalLength) {
+                    // 更新统计
+                    updatePacketStats(commandType, packetDataLength);
+
+                    // 识别数据包类型
+                    String packetType = identifyPacketType(commandType, packetDataLength);
+                    display.append(String.format("\n  📦 类型: %s", packetType));
+                    display.append(String.format("\n  📏 数据长度: %d字节", packetDataLength));
+                    display.append(String.format("\n  🎯 命令: 0x%02X", commandType));
+
+                    // 显示十六进制数据
+                    display.append(String.format("\n  🔢 原始数据: %s", bytesToHex(data)));
+
+                    // 根据类型显示额外信息
+                    display.append(formatPacketDetails(data, commandType, packetDataLength));
+
+                } else {
+                    // 包长度不匹配
+                    display.append(String.format("\n  ⚠️ 包长度不匹配: 期望%d字节，实际%d字节", totalLength, data.length));
+                    display.append(String.format("\n  🔢 原始数据: %s", bytesToHex(data)));
+                }
+            } else {
+                // 无效包头
+                display.append(String.format("\n  ❌ 无效包头: 0x%04X (期望: 0x0068)", header));
+                display.append(String.format("\n  🔢 原始数据: %s", bytesToHex(data)));
+            }
+        } else {
+            // 数据太短
+            display.append(String.format("\n  ❌ 数据包太短: %d字节 (最小4字节)", data.length));
+            display.append(String.format("\n  🔢 原始数据: %s", bytesToHex(data)));
+        }
+
+        return display.toString();
+    }
+
+    /**
+     * 识别数据包类型
+     */
+    private String identifyPacketType(int commandType, int dataLength) {
+        switch (commandType) {
+            case 0x55:
+                if (dataLength == 1) {
+                    return "🔋 开机响应包";
+                }
+                break;
+            case 0x02:
+                if (dataLength == 4) {
+                    return "🆔 查询ID响应包";
+                }
+                break;
+            case 0xCC:
+                if (dataLength == 42) {
+                    return "📍 定位数据包";
+                }
+                break;
+            default:
+                return String.format("❓ 未知类型 (0x%02X)", commandType);
+        }
+        return String.format("❓ 未知类型 (0x%02X, %d字节)", commandType, dataLength);
+    }
+
+    /**
+     * 根据数据包类型格式化详细信息
+     */
+    private String formatPacketDetails(byte[] data, int commandType, int dataLength) {
+        StringBuilder details = new StringBuilder();
+
+        switch (commandType) {
+            case 0x55: // 开机响应
+                details.append("\n  ✅ 设备开机成功");
+                break;
+
+            case 0x02: // 查询ID响应
+                if (data.length >= 7) {
+                    // 提取设备ID (字节4-6)
+                    byte[] deviceId = new byte[3];
+                    System.arraycopy(data, 4, deviceId, 0, 3);
+                    String idString = String.format("%02X%02X%02X",
+                            deviceId[0] & 0xFF, deviceId[1] & 0xFF, deviceId[2] & 0xFF);
+                    details.append(String.format("\n  🆔 设备ID: %s", idString));
+                }
+                break;
+
+            case 0xCC: // 定位数据
+                details.append("\n  📍 定位数据包");
+                details.append(String.format("\n  📊 数据长度: %d字节", dataLength));
+                if (data.length >= 45) {
+                    // 显示前几个字节作为示例
+                    StringBuilder sampleData = new StringBuilder();
+                    for (int i = 4; i < Math.min(12, data.length); i++) {
+                        sampleData.append(String.format("%02X ", data[i] & 0xFF));
+                    }
+                    details.append(String.format("\n  🔍 数据样本: %s...", sampleData.toString().trim()));
+                }
+                break;
+
+            default:
+                details.append(String.format("\n  ❓ 未知命令类型: 0x%02X", commandType));
+                break;
+        }
+
+        return details.toString();
+    }
+
+    /**
+     * 更新数据包统计
+     */
+    private void updatePacketStats(int commandType, int dataLength) {
+        totalPackets++;
+
+        switch (commandType) {
+            case 0x55:
+                if (dataLength == 1) {
+                    powerOnPackets++;
+                }
+                break;
+            case 0x02:
+                if (dataLength == 4) {
+                    idQueryPackets++;
+                }
+                break;
+            case 0xCC:
+                if (dataLength == 42) {
+                    locationPackets++;
+                }
+                break;
+        }
+
+        // 更新UI统计显示
+        if (tvPacketStats != null) {
+            String statsText = String.format("总计: %d | 开机: %d | ID: %d | 定位: %d",
+                    totalPackets, powerOnPackets, idQueryPackets, locationPackets);
+            tvPacketStats.setText(statsText);
+        }
+    }
+
+    /**
+     * 重置数据包统计
+     */
+    private void resetPacketStats() {
+        totalPackets = 0;
+        powerOnPackets = 0;
+        idQueryPackets = 0;
+        locationPackets = 0;
+
+        if (tvPacketStats != null) {
+            tvPacketStats.setText("总计: 0 | 开机: 0 | ID: 0 | 定位: 0");
+        }
     }
 
     // USB functionality temporarily disabled

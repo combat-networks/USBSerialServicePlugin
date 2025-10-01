@@ -21,6 +21,30 @@
         android:textAppearance="@style/TextAppearance.AppCompat.Small"
         android:layout_marginBottom="8dp" />
 
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginBottom="8dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="📊 数据包统计:"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/tv_packet_stats"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="总计: 0 | 开机: 0 | ID: 0 | 定位: 0"
+            android:textAppearance="@style/TextAppearance.AppCompat.Small"
+            android:textColor="@android:color/holo_blue_dark" />
+
+    </LinearLayout>
+
     <ScrollView
         android:id="@+id/log_scroll"
         android:layout_width="match_parent"
@@ -78,6 +102,30 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Test"
+            android:layout_marginStart="4dp" />
+
+    </LinearLayout>
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="4dp">
+
+        <Button
+            android:id="@+id/btn_clear_log"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="清除日志"
+            android:layout_marginEnd="4dp" />
+
+        <Button
+            android:id="@+id/btn_reset_stats"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="重置统计"
             android:layout_marginStart="4dp" />
 
     </LinearLayout>
