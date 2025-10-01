@@ -13,6 +13,7 @@ import android.widget.TextView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.io.IOException;
 
 import com.atak.plugins.impl.PluginLayoutInflater;
 import com.saemaps.android.dropdown.DropDown.OnStateListener;
@@ -35,6 +36,7 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
 
     private TextView tvStatus;
     private TextView tvDevices;
+    private TextView tvDeviceId;
     private TextView tvLog;
     private ScrollView logScroll;
     private TextView tvPacketStats;
@@ -48,6 +50,9 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
     private int powerOnPackets = 0;
     private int idQueryPackets = 0;
     private int locationPackets = 0;
+
+    // 手台ID查询相关
+    private long deviceId = -1; // 存储解析出的设备ID
 
     public USBSerialDropDownReceiver(MapView mapView, Context context) {
         super(mapView);
@@ -85,7 +90,10 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                         public void onDeviceConnected(UsbDevice device) {
                             mainHandler.post(() -> {
                                 appendLog("✅ 设备已连接: " + device.getVendorId() + ":" + device.getProductId());
-                                tvStatus.setText("Status: 已连接到 " + device.getVendorId() + ":" + device.getProductId());
+                                if (tvStatus != null) {
+                                    tvStatus.setText(
+                                            "Status: 已连接到 " + device.getVendorId() + ":" + device.getProductId());
+                                }
                                 resetPacketStats(); // 重置数据包统计
                             });
                         }
@@ -94,7 +102,14 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                         public void onDeviceDisconnected() {
                             mainHandler.post(() -> {
                                 appendLog("❌ 设备已断开连接");
-                                tvStatus.setText("Status: 设备已断开");
+                                if (tvStatus != null) {
+                                    tvStatus.setText("Status: 设备已断开");
+                                }
+                                // 重置手台ID显示
+                                if (tvDeviceId != null) {
+                                    tvDeviceId.setText("手台ID: 未查询");
+                                }
+                                deviceId = -1;
                             });
                         }
 
@@ -125,7 +140,9 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                         public void onError(Exception error) {
                             mainHandler.post(() -> {
                                 appendLog("❌ 错误: " + error.getMessage());
-                                tvStatus.setText("Status: 错误 - " + error.getMessage());
+                                if (tvStatus != null) {
+                                    tvStatus.setText("Status: 错误 - " + error.getMessage());
+                                }
                             });
                         }
 
@@ -133,7 +150,9 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                         public void onPermissionDenied(UsbDevice device) {
                             mainHandler.post(() -> {
                                 appendLog("❌ 权限被拒绝: " + device.getVendorId() + ":" + device.getProductId());
-                                tvStatus.setText("Status: 权限被拒绝");
+                                if (tvStatus != null) {
+                                    tvStatus.setText("Status: 权限被拒绝");
+                                }
                             });
                         }
                     });
@@ -143,7 +162,9 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                 Log.e(TAG, "Error initializing USBSerialManager", e);
                 mainHandler.post(() -> {
                     appendLog("❌ USB管理器初始化失败: " + e.getMessage());
-                    tvStatus.setText("Status: 初始化失败");
+                    if (tvStatus != null) {
+                        tvStatus.setText("Status: 初始化失败");
+                    }
                 });
             }
 
@@ -160,6 +181,7 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
         try {
             tvStatus = rootView.findViewById(R.id.tv_status);
             tvDevices = rootView.findViewById(R.id.tv_devices);
+            tvDeviceId = rootView.findViewById(R.id.tv_device_id);
             tvLog = rootView.findViewById(R.id.tv_log);
             logScroll = rootView.findViewById(R.id.log_scroll);
             tvPacketStats = rootView.findViewById(R.id.tv_packet_stats);
@@ -182,10 +204,10 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                     ", Send: " + (btnSend != null ? "yes" : "no"));
 
             btnScan.setOnClickListener(v -> {
-                appendLog("🔍 步骤1: 开始USB设备检测...");
+                appendLog("🔍 开始USB设备检测...");
                 if (usbSerialManager != null) {
-                    // 启用调试模式，步骤1
-                    usbSerialManager.setDebugMode(true, 1);
+                    // 禁用调试模式，允许正常连接
+                    usbSerialManager.setDebugMode(false, 0);
                     usbSerialManager.scanDevices();
                 } else {
                     appendLog("❌ USB管理器尚未初始化完成，请稍后再试");
@@ -223,16 +245,7 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                     appendLog("❌ USB管理器尚未初始化完成，请稍后再试");
                     return;
                 }
-                appendLog("📤 步骤6: 发送测试数据...");
-                // 启用调试模式，步骤6
-                usbSerialManager.setDebugMode(true, 6);
-                String testData = "Hello USB Serial!";
-                try {
-                    usbSerialManager.sendData(testData.getBytes());
-                    appendLog("✅ 测试数据发送成功");
-                } catch (Exception e) {
-                    appendLog("❌ 发送测试数据失败: " + e.getMessage());
-                }
+                queryDeviceId();
             });
 
             // 清除日志按钮
@@ -315,7 +328,9 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
      */
     private void updateDeviceList(List<UsbDevice> devices) {
         if (devices.isEmpty()) {
-            tvDevices.setText("未发现串口设备\n请检查:\n1. USB设备是否已连接\n2. 设备是否支持串口通信\n3. 驱动是否匹配");
+            if (tvDevices != null) {
+                tvDevices.setText("未发现串口设备\n请检查:\n1. USB设备是否已连接\n2. 设备是否支持串口通信\n3. 驱动是否匹配");
+            }
             appendLog("⚠️ 未发现任何串口设备");
         } else {
             StringBuilder deviceListText = new StringBuilder("发现串口设备:\n");
@@ -324,19 +339,76 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                 deviceListText.append(String.format("%d. VID:%04X PID:%04X\n",
                         i + 1, device.getVendorId(), device.getProductId()));
             }
-            tvDevices.setText(deviceListText.toString());
+            if (tvDevices != null) {
+                tvDevices.setText(deviceListText.toString());
+            }
             appendLog("✅ 步骤1验证成功: 发现 " + devices.size() + " 个串口设备");
         }
     }
 
     private void appendLog(String message) {
-        String current = tvLog.getText().toString();
-        if ("Waiting...".contentEquals(current) || current.isEmpty()) {
-            tvLog.setText(message);
+        // 🔧 同时输出到 logcat，方便调试和崩溃分析
+        Log.i(TAG, "[UI_LOG] " + message);
+
+        // 🔧 确保UI更新在主线程中进行 - 修复线程安全问题
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            // 当前在主线程，直接更新UI
+            updateLogUI(message);
         } else {
-            tvLog.append("\n" + message);
+            // 当前在后台线程，切换到主线程更新UI
+            mainHandler.post(() -> updateLogUI(message));
         }
-        logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    /**
+     * 在主线程中更新日志UI
+     */
+    private void updateLogUI(String message) {
+        // 添加空指针检查，防止崩溃
+        if (tvLog == null) {
+            Log.w(TAG, "tvLog is null, cannot append log: " + message);
+            return;
+        }
+
+        try {
+            String current = tvLog.getText().toString();
+            if ("Waiting...".contentEquals(current) || current.isEmpty()) {
+                tvLog.setText(message);
+            } else {
+                tvLog.append("\n" + message);
+            }
+
+            // 安全地滚动到底部
+            if (logScroll != null) {
+                logScroll.post(() -> {
+                    try {
+                        logScroll.fullScroll(View.FOCUS_DOWN);
+                    } catch (Exception e) {
+                        Log.w(TAG, "Error scrolling log view", e);
+                    }
+                });
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error appending log message", e);
+        }
+    }
+
+    /**
+     * 更新连接状态显示
+     */
+    private void updateConnectionStatus(boolean connected) {
+        try {
+            if (tvLog == null)
+                return;
+
+            String status = connected ? "✅ 已连接" : "❌ 未连接";
+            appendLog("🔌 连接状态: " + status);
+
+            // 可以在这里更新UI状态指示器
+            Log.d(TAG, "Connection status updated: " + connected);
+        } catch (Exception e) {
+            Log.e(TAG, "Error updating connection status", e);
+        }
     }
 
     /**
@@ -441,16 +513,22 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
         switch (commandType) {
             case 0x55: // 开机响应
                 details.append("\n  ✅ 设备开机成功");
+                // 开机后自动发送查询ID命令
+                appendLog("🔋 检测到设备开机，自动查询手台ID...");
+                mainHandler.postDelayed(() -> queryDeviceId(), 100); // 延迟100ms后查询
                 break;
 
             case 0x02: // 查询ID响应
                 if (data.length >= 7) {
                     // 提取设备ID (字节4-6)
-                    byte[] deviceId = new byte[3];
-                    System.arraycopy(data, 4, deviceId, 0, 3);
+                    byte[] deviceIdBytes = new byte[3];
+                    System.arraycopy(data, 4, deviceIdBytes, 0, 3);
                     String idString = String.format("%02X%02X%02X",
-                            deviceId[0] & 0xFF, deviceId[1] & 0xFF, deviceId[2] & 0xFF);
+                            deviceIdBytes[0] & 0xFF, deviceIdBytes[1] & 0xFF, deviceIdBytes[2] & 0xFF);
                     details.append(String.format("\n  🆔 设备ID: %s", idString));
+
+                    // 调用ID响应处理方法
+                    handleIdResponse(data);
                 }
                 break;
 
@@ -518,6 +596,149 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
 
         if (tvPacketStats != null) {
             tvPacketStats.setText("总计: 0 | 开机: 0 | ID: 0 | 定位: 0");
+        }
+    }
+
+    /**
+     * 查询手台ID
+     * 发送查询ID数据包: 0x68 0x00 0x01 0x02
+     */
+    private void queryDeviceId() {
+        try {
+            if (usbSerialManager == null) {
+                appendLog("❌ USB管理器尚未初始化完成，请稍后再试");
+                return;
+            }
+
+            // 检查USB设备是否已连接
+            if (!usbSerialManager.isConnected()) {
+                appendLog("❌ USB设备未连接，请先连接设备");
+                appendLog("💡 请按以下步骤操作：");
+                appendLog("   1. 点击'扫描'按钮检测USB设备");
+                appendLog("   2. 点击'连接'按钮连接设备");
+                appendLog("   3. 连接成功后再次点击'查询ID'");
+                return;
+            }
+
+            appendLog("🆔 准备发送查询手台ID命令...");
+
+            // 构造查询ID数据包
+            byte[] queryPacket = new byte[4];
+            queryPacket[0] = (byte) 0x68; // 包头标识低字节
+            queryPacket[1] = (byte) 0x00; // 包头标识高字节
+            queryPacket[2] = (byte) 0x01; // 包长度（数据部分长度）
+            queryPacket[3] = (byte) 0x02; // 命令类型：查询设备ID
+
+            appendLog("📦 准备发送数据包: " + bytesToHex(queryPacket));
+
+            // 🔧 在后台线程中执行发送操作，避免阻塞UI线程
+            new Thread(() -> {
+                try {
+                    appendLog("🔍 步骤2: 检查USB连接状态...");
+
+                    // 🔧 发送前检查连接状态
+                    if (!usbSerialManager.isConnected()) {
+                        mainHandler.post(() -> {
+                            appendLog("❌ USB设备未连接，无法发送查询命令");
+                        });
+                        return;
+                    }
+
+                    mainHandler.post(() -> {
+                        appendLog("✅ 步骤2验证成功: USB设备已连接");
+                        appendLog("🚀 步骤3: 开始发送数据包...");
+                    });
+
+                    usbSerialManager.sendData(queryPacket);
+
+                    mainHandler.post(() -> {
+                        appendLog("✅ 步骤3验证成功: 查询ID命令发送成功");
+                        appendLog("⏳ 等待设备响应...");
+                    });
+                } catch (IOException e) {
+                    mainHandler.post(() -> {
+                        appendLog("❌ 步骤3失败: 发送失败 - " + e.getMessage());
+                        appendLog("🔍 错误详情: " + e.getClass().getSimpleName());
+                    });
+                    Log.e(TAG, "Send data failed", e);
+
+                    // 🔧 检查是否是连接问题
+                    if (e.getMessage().contains("not connected") ||
+                            e.getMessage().contains("connection lost") ||
+                            e.getMessage().contains("disconnected")) {
+                        mainHandler.post(() -> {
+                            appendLog("⚠️ USB连接已断开，请重新连接设备");
+                            // 更新UI状态
+                            updateConnectionStatus(false);
+                        });
+                        return;
+                    }
+
+                    // 如果是超时错误，可以尝试重试
+                    if (e.getMessage().contains("timeout") || e.getMessage().contains("Timeout")) {
+                        mainHandler.post(() -> {
+                            appendLog("⚠️ 发送超时，正在重试...");
+                        });
+                        try {
+                            Thread.sleep(100); // 短暂等待
+                            usbSerialManager.sendData(queryPacket);
+                            mainHandler.post(() -> {
+                                appendLog("✅ 重试发送成功");
+                            });
+                        } catch (Exception retryE) {
+                            mainHandler.post(() -> {
+                                appendLog("❌ 重试发送失败: " + retryE.getMessage());
+                            });
+                            Log.e(TAG, "Retry send failed", retryE);
+                        }
+                    }
+                } catch (Exception e) {
+                    mainHandler.post(() -> {
+                        appendLog("❌ 步骤3失败: 发送过程中发生未知错误");
+                        appendLog("🔍 错误类型: " + e.getClass().getSimpleName());
+                        appendLog("🔍 错误信息: " + e.getMessage());
+                    });
+                    Log.e(TAG, "Unexpected error during send", e);
+                }
+            }).start();
+
+        } catch (Exception e) {
+            appendLog("❌ 查询ID时发生未知错误: " + e.getMessage());
+            Log.e(TAG, "Unexpected error in queryDeviceId", e);
+        }
+    }
+
+    /**
+     * 处理手台ID响应
+     * 响应数据包格式: 0x68 0x00 0x04 0x02 ID1 ID2 ID3
+     */
+    private void handleIdResponse(byte[] data) {
+
+        if (data.length >= 7) {
+            // 解析设备ID (字节4-6) - 小端序解析
+            long localId = (data[4] & 0xFF); // 最低字节
+            localId |= ((data[5] & 0xFF) << 8); // 中间字节
+            localId |= ((data[6] & 0xFF) << 16); // 最高字节
+
+            deviceId = localId;
+
+            appendLog("✅ 获取到设备ID成功！");
+            appendLog("🆔 手台ID: " + localId);
+            appendLog("📦 响应数据包: " + bytesToHex(data));
+            appendLog("🔍 ID解析: " + String.format("0x%06X (%d)", localId, localId));
+
+            // 更新状态显示
+            if (tvStatus != null) {
+                tvStatus.setText("Status: 已连接 - 手台ID: " + localId);
+            }
+
+            // 更新手台ID显示
+            if (tvDeviceId != null) {
+                tvDeviceId.setText("手台ID: " + localId + " (0x" + String.format("%06X", localId) + ")");
+            }
+
+        } else {
+            appendLog("❌ ID响应数据包长度不足: " + data.length + "字节 (期望7字节)");
         }
     }
 
