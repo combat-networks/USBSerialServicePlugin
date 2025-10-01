@@ -36,7 +36,9 @@ public class USBSerialService extends Service implements SerialListener {
         }
     }
 
-    private enum QueueType { CONNECT, CONNECT_ERROR, READ, IO_ERROR }
+    private enum QueueType {
+        CONNECT, CONNECT_ERROR, READ, IO_ERROR
+    }
 
     private static class QueueItem {
         final QueueType type;
@@ -160,8 +162,7 @@ public class USBSerialService extends Service implements SerialListener {
             NotificationChannel channel = new NotificationChannel(
                     Constants.NOTIFICATION_CHANNEL,
                     getString(R.string.app_name),
-                    NotificationManager.IMPORTANCE_LOW
-            );
+                    NotificationManager.IMPORTANCE_LOW);
             channel.setDescription(getString(R.string.notification_channel_description));
             manager.createNotificationChannel(channel);
         }
@@ -175,8 +176,7 @@ public class USBSerialService extends Service implements SerialListener {
                 this,
                 1,
                 disconnectIntent,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
-        );
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
 
         Intent showIntent = new Intent(this, USBSerialDropDownReceiver.class);
         showIntent.setAction(USBSerialDropDownReceiver.SHOW_PLUGIN);
@@ -184,16 +184,17 @@ public class USBSerialService extends Service implements SerialListener {
                 this,
                 2,
                 showIntent,
-                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0
-        );
+                Build.VERSION.SDK_INT >= Build.VERSION_CODES.M ? PendingIntent.FLAG_IMMUTABLE : 0);
 
         return new NotificationCompat.Builder(this, Constants.NOTIFICATION_CHANNEL)
                 .setSmallIcon(R.drawable.ic_notification)
                 .setContentTitle(getString(R.string.app_name))
-                .setContentText(socket != null ? getString(R.string.notification_connected, socket.getName()) : getString(R.string.notification_service_running))
+                .setContentText(socket != null ? getString(R.string.notification_connected, socket.getName())
+                        : getString(R.string.notification_service_running))
                 .setContentIntent(showPendingIntent)
                 .setOngoing(true)
-                .addAction(R.drawable.ic_clear_white_24dp, getString(R.string.notification_action_disconnect), disconnectPendingIntent)
+                .addAction(R.drawable.ic_clear_white_24dp, getString(R.string.notification_action_disconnect),
+                        disconnectPendingIntent)
                 .build();
     }
 
@@ -264,7 +265,26 @@ public class USBSerialService extends Service implements SerialListener {
 
     @Override
     public void onSerialRead(ArrayDeque<byte[]> datas) {
-        throw new UnsupportedOperationException();
+        // 处理批量数据读取 - 将ArrayDeque中的数据逐个处理
+        if (!connected || datas == null || datas.isEmpty()) {
+            return;
+        }
+
+        synchronized (this) {
+            if (listener != null) {
+                // 如果有监听器，直接转发数据
+                mainLooper.post(() -> {
+                    if (listener != null) {
+                        listener.onSerialRead(datas);
+                    } else {
+                        queue1.add(new QueueItem(QueueType.READ, datas));
+                    }
+                });
+            } else {
+                // 如果没有监听器，将数据加入队列
+                queue2.add(new QueueItem(QueueType.READ, datas));
+            }
+        }
     }
 
     @Override

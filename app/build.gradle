@@ -290,11 +290,11 @@ android {
 
 
 dependencies {
-    // USB串口通信�?
+    // USB串口通信库 - 使用3.8.0版本（与主程序保持一致）
     implementation 'com.github.mik3y:usb-serial-for-android:3.8.0'
 }
 
-// 强制解决USB串口库版本冲突
+// 强制解决USB串口库版本冲突 - 使用3.8.0版本
 configurations.all {
     resolutionStrategy {
         force 'com.github.mik3y:usb-serial-for-android:3.8.0'

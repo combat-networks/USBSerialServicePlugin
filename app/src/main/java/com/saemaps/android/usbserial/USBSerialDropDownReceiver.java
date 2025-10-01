@@ -55,17 +55,17 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
             initViews();
             Log.d(TAG, "Views initialized successfully");
 
-            // 延迟获取USB串口管理器实例，避免在构造函数中阻塞
-            mainHandler.post(() -> {
-                try {
-                    Log.d(TAG, "Initializing USBSerialManager reference in background");
-                    usbSerialManager = USBSerialLifecycle.getUsbSerialManagerInstance();
-                    if (usbSerialManager == null) {
-                        Log.e(TAG, "USBSerialManager instance not available from Lifecycle");
-                    } else {
-                        usbSerialManager.setMapView(getMapView());
-                        Log.d(TAG, "USBSerialManager instance obtained successfully");
-                    }
+            // 🔧 修复：同步获取USB串口管理器实例并设置listener，确保listener在构造函数中完成设置
+            try {
+                Log.d(TAG, "Initializing USBSerialManager reference synchronously");
+                usbSerialManager = USBSerialLifecycle.getUsbSerialManagerInstance();
+                if (usbSerialManager == null) {
+                    Log.e(TAG, "USBSerialManager instance not available from Lifecycle");
+                } else {
+                    usbSerialManager.setMapView(getMapView());
+                    Log.d(TAG, "USBSerialManager instance obtained successfully");
+
+                    // 🔧 立即设置listener，确保数据接收回调能正常工作
                     usbSerialManager.setListener(new USBSerialManager.USBSerialListener() {
                         @Override
                         public void onDeviceDetected(List<UsbDevice> devices) {
@@ -92,9 +92,25 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
 
                         @Override
                         public void onDataReceived(byte[] data) {
+                            Log.d(TAG, "🎯 onDataReceived called with " + data.length + " bytes");
                             mainHandler.post(() -> {
-                                String received = new String(data);
-                                appendLog("📥 收到数据: " + received);
+                                Log.d(TAG, "🎯 onDataReceived UI update started");
+                                Log.d(TAG, "🎯 tvLog is null: " + (tvLog == null));
+                                Log.d(TAG, "🎯 logScroll is null: " + (logScroll == null));
+
+                                // 🔧 修复：将二进制数据转换为十六进制显示
+                                String hexData = bytesToHex(data);
+                                String dataInfo = String.format("📥 收到数据 (%d字节): %s", data.length, hexData);
+                                Log.d(TAG, "🎯 About to append log: " + dataInfo);
+
+                                if (tvLog != null) {
+                                    appendLog(dataInfo);
+                                    Log.d(TAG, "🎯 Log appended successfully");
+                                } else {
+                                    Log.e(TAG, "🎯 tvLog is null, cannot append log");
+                                }
+
+                                Log.d(TAG, "🎯 onDataReceived UI update completed");
                             });
                         }
 
@@ -115,14 +131,14 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
                         }
                     });
                     Log.d(TAG, "USBSerialManager initialized successfully");
-                } catch (Exception e) {
-                    Log.e(TAG, "Error initializing USBSerialManager", e);
-                    mainHandler.post(() -> {
-                        appendLog("❌ USB管理器初始化失败: " + e.getMessage());
-                        tvStatus.setText("Status: 初始化失败");
-                    });
                 }
-            });
+            } catch (Exception e) {
+                Log.e(TAG, "Error initializing USBSerialManager", e);
+                mainHandler.post(() -> {
+                    appendLog("❌ USB管理器初始化失败: " + e.getMessage());
+                    tvStatus.setText("Status: 初始化失败");
+                });
+            }
 
             Log.d(TAG, "USBSerialDropDownReceiver constructor completed successfully");
 
@@ -297,6 +313,17 @@ public class USBSerialDropDownReceiver extends DropDownReceiver implements OnSta
             tvLog.append("\n" + message);
         }
         logScroll.post(() -> logScroll.fullScroll(View.FOCUS_DOWN));
+    }
+
+    /**
+     * 将字节数组转换为十六进制字符串
+     */
+    private String bytesToHex(byte[] bytes) {
+        StringBuilder result = new StringBuilder();
+        for (byte b : bytes) {
+            result.append(String.format("%02X ", b));
+        }
+        return result.toString().trim();
     }
 
     // USB functionality temporarily disabled

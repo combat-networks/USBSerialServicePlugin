@@ -9,6 +9,8 @@ import android.hardware.usb.UsbDevice;
 import android.hardware.usb.UsbDeviceConnection;
 import android.hardware.usb.UsbManager;
 import android.os.Build;
+import android.os.Handler;
+import android.os.Looper;
 import android.util.Log;
 
 import com.hoho.android.usbserial.driver.UsbSerialDriver;
@@ -20,7 +22,6 @@ import com.saemaps.android.usbserial.USBSerialPermissionReceiver;
 import com.saemaps.android.maps.MapView;
 
 import java.io.IOException;
-import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -32,6 +33,10 @@ import java.util.List;
 public class USBSerialManager {
 
     private static final String TAG = "USBSerialManager";
+
+    // 状态监控相关
+    private Handler statusMonitorHandler;
+    private Runnable statusMonitorRunnable;
 
     // 移除内部单例管理，改为由USBSerialLifecycle管理
     // 🔑 使用完全通用的action名称，避免包名冲突
@@ -58,6 +63,12 @@ public class USBSerialManager {
     private volatile boolean isReconnecting;
     private volatile boolean isDisconnecting;
     private volatile boolean isDeviceDetached;
+
+    // 重连计数器和错误分类
+    private int reconnectCount = 0;
+    private long lastReconnectTime = 0;
+    private static final int MAX_RECONNECT_ATTEMPTS = 5;
+    private static final long RECONNECT_COOLDOWN_MS = 10000; // 10秒冷却期
 
     // 权限接收器
     // private USBSerialPermissionReceiver permissionReceiver;
@@ -144,6 +155,8 @@ public class USBSerialManager {
         IntentFilter filter = new IntentFilter();
         filter.addAction(UsbManager.ACTION_USB_DEVICE_ATTACHED);
         filter.addAction(UsbManager.ACTION_USB_DEVICE_DETACHED);
+        // 🔧 添加自定义USB设备插入广播监听
+        filter.addAction("com.saemaps.android.usbserial.USB_DEVICE_ATTACHED");
         // filter.addAction(ACTION_USB_PERMISSION_GRANTED);
         // filter.addAction(ACTION_USB_PERMISSION_DENIED);
 
@@ -166,9 +179,19 @@ public class USBSerialManager {
             if (device == null) {
                 return;
             }
-            if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action)) {
+            if (UsbManager.ACTION_USB_DEVICE_ATTACHED.equals(action) ||
+                    "com.saemaps.android.usbserial.USB_DEVICE_ATTACHED".equals(action)) {
                 Log.d(TAG, "🔍 STEP1: USB device attached: " + describe(device));
                 scanDevices();
+
+                // 🔧 自动连接检测到的USB串口设备
+                UsbSerialDriver driver = SerialDriverProber.probeDevice(device);
+                if (driver != null) {
+                    Log.d(TAG, "🔌 STEP1: Auto-connecting to detected serial device: " + describe(device));
+                    connectToDevice(device);
+                } else {
+                    Log.d(TAG, "🔍 STEP1: Device is not a serial device, skipping auto-connect");
+                }
             } else if (UsbManager.ACTION_USB_DEVICE_DETACHED.equals(action)) {
                 Log.d(TAG, "🔍 STEP1: USB device detached: " + describe(device));
                 isDeviceDetached = true;
@@ -199,7 +222,9 @@ public class USBSerialManager {
     };
 
     public void setListener(USBSerialListener listener) {
+        Log.d(TAG, "🔧 setListener called with " + (listener != null ? "NOT NULL" : "NULL") + " listener");
         this.listener = listener;
+        Log.d(TAG, "🔧 listener set successfully");
     }
 
     public USBSerialListener getListener() {
@@ -237,6 +262,17 @@ public class USBSerialManager {
     public void connectToDevice(UsbDevice device) {
         Log.d(TAG, "🔌 connectToDevice called for device: " + describe(device));
         Log.d(TAG, "🔌 Debug mode: " + debugMode + ", debug step: " + debugStep);
+
+        // 🔧 防止重复连接：如果正在连接同一个设备，直接返回
+        if (isConnected && currentPort != null) {
+            UsbDevice connectedDevice = currentPort.getDriver().getDevice();
+            if (connectedDevice.getVendorId() == device.getVendorId() &&
+                    connectedDevice.getProductId() == device.getProductId()) {
+                Log.d(TAG, "🔌 Device already connected (VID=" + device.getVendorId() +
+                        " PID=" + device.getProductId() + "), skipping duplicate connection");
+                return;
+            }
+        }
 
         // reset transient flags for a fresh connection attempt
         isDeviceDetached = false;
@@ -410,9 +446,16 @@ public class USBSerialManager {
                 ioManager = new SerialInputOutputManager(currentPort, new SerialInputOutputManager.Listener() {
                     @Override
                     public void onNewData(byte[] data) {
-                        Log.d(TAG, "RX bytes=" + data.length);
+                        Log.d(TAG, "🔍 RX bytes=" + data.length + " - SerialInputOutputManager is working!");
+                        Log.d(TAG, "🔍 Data received - listener is " + (listener != null ? "NOT NULL" : "NULL"));
+                        Log.d(TAG, "🔍 IO Manager state: " + (ioManager != null ? "EXISTS" : "NULL"));
+                        Log.d(TAG, "🔍 Thread state: " + (legacyIoThread != null ? legacyIoThread.getState() : "NULL"));
                         if (listener != null) {
+                            Log.d(TAG, "📤 Calling listener.onDataReceived with " + data.length + " bytes");
                             listener.onDataReceived(data);
+                            Log.d(TAG, "📤 listener.onDataReceived completed successfully");
+                        } else {
+                            Log.w(TAG, "⚠️ Listener is NULL - data received but not forwarded to UI!");
                         }
                     }
 
@@ -426,6 +469,17 @@ public class USBSerialManager {
                             Log.w(TAG, "Serial IO ended due to close/detach: " + message);
                             return;
                         }
+
+                        // 检查是否是USB状态检查错误
+                        boolean isUsbStatusError = message.contains("USB get_status request failed");
+                        if (isUsbStatusError) {
+                            // 🔧 新策略：完全忽略CH340的状态检查错误
+                            // 这是CH340驱动的已知问题，但连接和数据传输仍然正常
+                            // 不需要重启IO管理器，只需要记录日志即可
+                            Log.d(TAG, "CH340 USB status check failed (ignored) - connection still functional");
+                            return; // 直接返回，不进行任何重启操作
+                        }
+
                         Log.e(TAG, "Serial IO error", e);
                         if (listener != null) {
                             listener.onError(e);
@@ -435,41 +489,41 @@ public class USBSerialManager {
                     }
                 });
 
-                // 兼容不同版本的SerialInputOutputManager
+                // 使用3.8.0版本推荐的启动方式
                 if (debugMode && debugStep >= 2) {
-                    Log.d(TAG, "🔐 STEP2: Starting SerialInputOutputManager...");
+                    Log.d(TAG, "🔐 STEP2: Starting SerialInputOutputManager with 3.8.0 API...");
                 }
                 try {
-                    // 尝试使用新版本的 start() 方法
-                    ioManager.getClass().getMethod("start").invoke(ioManager);
-                    Log.d(TAG, "Using new version SerialInputOutputManager.start()");
-                    if (debugMode && debugStep >= 2) {
-                        Log.d(TAG, "🔐 STEP2: SerialInputOutputManager started with new version method");
-                    }
-                } catch (NoSuchMethodException e) {
-                    // 如果 start() 方法不存在，使用旧版本的方式启动
-                    Log.d(TAG, "Using legacy SerialInputOutputManager with Thread");
-                    if (debugMode && debugStep >= 2) {
-                        Log.d(TAG, "🔐 STEP2: SerialInputOutputManager started with legacy Thread method");
-                    }
+                    // 使用3.8.0版本的Thread方式启动SerialInputOutputManager
                     legacyIoThread = new Thread(ioManager, "SerialInputOutputManager");
                     legacyIoThread.start();
-                } catch (InvocationTargetException e) {
-                    Log.e(TAG, "Failed to invoke SerialInputOutputManager.start()", e.getCause());
+                    Log.d(TAG, "Using Thread-based SerialInputOutputManager - 3.8.0 API");
                     if (debugMode && debugStep >= 2) {
-                        Log.e(TAG, "🔐 STEP2: Failed to start SerialInputOutputManager - invocation error");
+                        Log.d(TAG, "🔐 STEP2: SerialInputOutputManager started with Thread");
                     }
-                    throw new RuntimeException("Failed to start SerialInputOutputManager", e.getCause());
+
+                    // 启动状态监控
+                    startIoManagerStatusMonitor();
                 } catch (Exception e) {
                     Log.e(TAG, "Failed to start SerialInputOutputManager", e);
                     if (debugMode && debugStep >= 2) {
-                        Log.e(TAG, "🔐 STEP2: Failed to start SerialInputOutputManager - general error");
+                        Log.e(TAG, "🔐 STEP2: Failed to start SerialInputOutputManager");
                     }
-                    throw new RuntimeException("Failed to start SerialInputOutputManager", e);
+                    // 不要抛出RuntimeException，而是记录错误并通知listener
+                    if (listener != null) {
+                        listener.onError(
+                                new IOException("Failed to start SerialInputOutputManager: " + e.getMessage()));
+                    }
+                    return; // 直接返回，不继续执行
                 }
 
                 isConnected = true;
+                // 连接成功，重置重连计数器
+                reconnectCount = 0;
                 Log.d(TAG, "USB serial connected: " + describe(device));
+
+                // 连接成功，不需要发送测试数据
+                Log.d(TAG, "🔧 Connection established successfully");
                 if (debugMode && debugStep >= 2) {
                     Log.d(TAG, "🔐 STEP2: USB serial connection established successfully!");
                 }
@@ -518,38 +572,59 @@ public class USBSerialManager {
     }
 
     public void disconnect() {
-        isDisconnecting = true;
-        if (ioManager != null) {
-            ioManager.stop();
-            ioManager = null;
-        }
-        stopLegacyThread();
-        if (currentPort != null) {
-            try {
+        try {
+            isDisconnecting = true;
+
+            // 停止状态监控
+            stopIoManagerStatusMonitor();
+
+            if (ioManager != null) {
                 try {
-                    currentPort.setDTR(false);
-                } catch (Exception ignored) {
+                    ioManager.stop();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error stopping ioManager", e);
                 }
-                try {
-                    currentPort.setRTS(false);
-                } catch (Exception ignored) {
-                }
-                currentPort.close();
-            } catch (Exception e) {
-                Log.e(TAG, "Error closing serial port", e);
+                ioManager = null;
             }
-            currentPort = null;
+            stopLegacyThread();
+            if (currentPort != null) {
+                try {
+                    try {
+                        currentPort.setDTR(false);
+                    } catch (Exception ignored) {
+                    }
+                    try {
+                        currentPort.setRTS(false);
+                    } catch (Exception ignored) {
+                    }
+                    currentPort.close();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error closing serial port", e);
+                }
+                currentPort = null;
+            }
+            if (currentConnection != null) {
+                try {
+                    currentConnection.close();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error closing connection", e);
+                }
+                currentConnection = null;
+            }
+            if (isConnected && listener != null) {
+                try {
+                    listener.onDeviceDisconnected();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error in listener.onDeviceDisconnected", e);
+                }
+            }
+            isConnected = false;
+            Log.d(TAG, "Serial connection closed");
+        } catch (Exception e) {
+            Log.e(TAG, "Error in disconnect", e);
+        } finally {
+            isDisconnecting = false;
         }
-        if (currentConnection != null) {
-            currentConnection.close();
-            currentConnection = null;
-        }
-        if (isConnected && listener != null) {
-            listener.onDeviceDisconnected();
-        }
-        isConnected = false;
-        Log.d(TAG, "Serial connection closed");
-        isDisconnecting = false;
     }
 
     public void destroy() {
@@ -611,20 +686,31 @@ public class USBSerialManager {
     }
 
     private void stopLegacyThread() {
-        if (legacyIoThread != null && legacyIoThread.isAlive()) {
-            Log.d(TAG, "Stopping legacy SerialInputOutputManager thread");
-            legacyIoThread.interrupt();
-            try {
-                legacyIoThread.join(1000); // wait up to 1s for the legacy IO thread to finish
-            } catch (InterruptedException e) {
-                Log.w(TAG, "Interrupted while waiting for legacy thread to stop", e);
-                Thread.currentThread().interrupt();
+        try {
+            if (legacyIoThread != null && legacyIoThread.isAlive()) {
+                Log.d(TAG, "Stopping legacy SerialInputOutputManager thread");
+                legacyIoThread.interrupt();
+                try {
+                    legacyIoThread.join(1000); // wait up to 1s for the legacy IO thread to finish
+                } catch (InterruptedException e) {
+                    Log.w(TAG, "Interrupted while waiting for legacy thread to stop", e);
+                    Thread.currentThread().interrupt();
+                } catch (Exception e) {
+                    Log.e(TAG, "Error stopping legacy thread", e);
+                }
+                legacyIoThread = null;
             }
+        } catch (Exception e) {
+            Log.e(TAG, "Error in stopLegacyThread", e);
             legacyIoThread = null;
         }
     }
 
     private void triggerAutoReconnect(String reason) {
+        triggerDelayedReconnect(reason, 500);
+    }
+
+    private void triggerDelayedReconnect(String reason, long delayMs) {
         if (isReconnecting) {
             Log.w(TAG, "Reconnect already in progress, ignore. reason=" + reason);
             return;
@@ -637,11 +723,57 @@ public class USBSerialManager {
             Log.w(TAG, "No device to reconnect to. reason=" + reason);
             return;
         }
+
+        // 检查重连限制
+        long currentTime = System.currentTimeMillis();
+        if (reconnectCount >= MAX_RECONNECT_ATTEMPTS) {
+            if (currentTime - lastReconnectTime < RECONNECT_COOLDOWN_MS) {
+                Log.w(TAG, "Max reconnect attempts reached (" + MAX_RECONNECT_ATTEMPTS +
+                        "), cooling down for " + (RECONNECT_COOLDOWN_MS / 1000) + "s. reason=" + reason);
+                return;
+            } else {
+                // 冷却期结束，重置计数器
+                Log.i(TAG, "Reconnect cooldown period ended, resetting counter");
+                reconnectCount = 0;
+            }
+        }
+
+        reconnectCount++;
+        lastReconnectTime = currentTime;
+
+        // 对于USB状态错误，使用指数退避
+        final long actualDelay = reason.contains("USB status error") ? Math.min(delayMs * reconnectCount, 10000)
+                : delayMs; // 最大10秒
+
+        if (reason.contains("USB status error")) {
+            Log.i(TAG, "USB status error detected, using exponential backoff: " + actualDelay + "ms");
+        }
+
+        final int currentReconnectCount = reconnectCount;
+        final String reconnectReason = reason;
+
         isReconnecting = true;
         new Thread(() -> {
             try {
-                Log.w(TAG, "Attempting auto-reconnect in 500ms. reason=" + reason);
-                Thread.sleep(500);
+                Log.w(TAG, "Attempting auto-reconnect #" + currentReconnectCount + " in " + actualDelay + "ms. reason="
+                        + reconnectReason);
+                Thread.sleep(actualDelay);
+
+                // 🔧 修复：检查是否已经连接，避免重复连接
+                if (isConnected && currentPort != null && currentDevice != null) {
+                    UsbDevice connectedDevice = currentPort.getDriver().getDevice();
+                    if (connectedDevice.getVendorId() == currentDevice.getVendorId() &&
+                            connectedDevice.getProductId() == currentDevice.getProductId()) {
+                        Log.d(TAG, "🔌 Auto-reconnect skipped: Device already connected (VID=" +
+                                currentDevice.getVendorId() + " PID=" + currentDevice.getProductId() + ")");
+
+                        // 🔧 关键修复：即使跳过重连，也要重新启动IO管理器
+                        Log.i(TAG, "🔄 Restarting IO manager after skipped reconnect...");
+                        restartSerialInputOutputManager();
+                        return;
+                    }
+                }
+
                 try {
                     disconnect();
                 } catch (Exception ignored) {
@@ -710,6 +842,163 @@ public class USBSerialManager {
     private void notifyError(String message) {
         Log.e(TAG, "❌ " + message);
         // 如果你有 listener，可以在这里回调： listener.onError(message, null);
+    }
+
+    /**
+     * 重启SerialInputOutputManager
+     * 用于处理CH340驱动的状态检查错误
+     */
+    private void restartSerialInputOutputManager() {
+        if (currentPort == null || ioManager == null) {
+            Log.w(TAG, "Cannot restart SerialInputOutputManager - port or manager is null");
+            return;
+        }
+
+        try {
+            Log.i(TAG, "🔄 Restarting SerialInputOutputManager...");
+
+            // 停止当前的IO管理器
+            if (ioManager != null) {
+                ioManager.stop();
+                ioManager = null;
+            }
+
+            // 重新创建SerialInputOutputManager
+            ioManager = new SerialInputOutputManager(currentPort, new SerialInputOutputManager.Listener() {
+                @Override
+                public void onNewData(byte[] data) {
+                    Log.d(TAG, "🔍 RX bytes=" + data.length + " - SerialInputOutputManager is working!");
+                    Log.d(TAG, "🔍 Data received - listener is " + (listener != null ? "NOT NULL" : "NULL"));
+                    Log.d(TAG, "🔍 IO Manager state: " + (ioManager != null ? "EXISTS" : "NULL"));
+                    Log.d(TAG, "🔍 Thread state: " + (legacyIoThread != null ? legacyIoThread.getState() : "NULL"));
+                    if (listener != null) {
+                        Log.d(TAG, "📤 Calling listener.onDataReceived with " + data.length + " bytes");
+                        listener.onDataReceived(data);
+                        Log.d(TAG, "📤 listener.onDataReceived completed successfully");
+                    } else {
+                        Log.w(TAG, "⚠️ Listener is NULL - data received but not forwarded to UI!");
+                    }
+                }
+
+                @Override
+                public void onRunError(Exception e) {
+                    // 使用相同的错误处理逻辑
+                    String message = e != null && e.getMessage() != null ? e.getMessage() : "";
+                    boolean isBenignClose = isDisconnecting || isDeviceDetached
+                            || message.contains("Connection closed");
+                    if (isBenignClose) {
+                        Log.w(TAG, "Serial IO ended due to close/detach: " + message);
+                        return;
+                    }
+
+                    // 检查是否是USB状态检查错误
+                    boolean isUsbStatusError = message.contains("USB get_status request failed");
+                    if (isUsbStatusError) {
+                        // 🔧 新策略：完全忽略CH340的状态检查错误
+                        // 这是CH340驱动的已知问题，但连接和数据传输仍然正常
+                        // 不需要重启IO管理器，只需要记录日志即可
+                        Log.d(TAG, "CH340 USB status check failed (ignored) - connection still functional");
+                        return; // 直接返回，不进行任何重启操作
+                    }
+
+                    Log.e(TAG, "Serial IO error", e);
+                    if (listener != null) {
+                        listener.onError(e);
+                    }
+                    // Attempt graceful auto-reconnect with short backoff
+                    triggerAutoReconnect("IO error: " + message);
+                }
+            });
+
+            // 启动新的IO管理器 - 使用3.8.0版本推荐方式
+            try {
+                legacyIoThread = new Thread(ioManager, "SerialInputOutputManager");
+                legacyIoThread.start();
+                Log.d(TAG, "SerialInputOutputManager restarted with Thread - 3.8.0 API");
+                Log.d(TAG, "🔄 SerialInputOutputManager restarted successfully");
+            } catch (Exception e) {
+                Log.e(TAG, "Failed to restart SerialInputOutputManager", e);
+                // 不要抛出RuntimeException，而是记录错误并通知listener
+                if (listener != null) {
+                    listener.onError(
+                            new IOException("Failed to restart SerialInputOutputManager: " + e.getMessage()));
+                }
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "Error restarting SerialInputOutputManager", e);
+            if (listener != null) {
+                listener.onError(e);
+            }
+        }
+    }
+
+    /**
+     * 启动IO管理器状态监控
+     */
+    private void startIoManagerStatusMonitor() {
+        try {
+            if (statusMonitorHandler != null) {
+                statusMonitorHandler.removeCallbacks(statusMonitorRunnable);
+            }
+
+            statusMonitorHandler = new Handler(Looper.getMainLooper());
+            statusMonitorRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    try {
+                        if (ioManager != null && legacyIoThread != null) {
+                            Thread.State threadState = legacyIoThread.getState();
+                            Log.d(TAG, "📊 IO Manager Status Check - Thread State: " + threadState);
+
+                            if (threadState == Thread.State.TERMINATED) {
+                                Log.w(TAG, "⚠️ SerialInputOutputManager thread has terminated!");
+                                // 如果线程已终止，尝试重启
+                                if (isConnected && !isDisconnecting && currentPort != null) {
+                                    Log.i(TAG, "🔄 Attempting to restart terminated SerialInputOutputManager...");
+                                    try {
+                                        restartSerialInputOutputManager();
+                                    } catch (Exception e) {
+                                        Log.e(TAG, "Error in status monitor restart attempt", e);
+                                    }
+                                }
+                            }
+                        }
+
+                        // 每5秒检查一次状态
+                        if (statusMonitorHandler != null) {
+                            statusMonitorHandler.postDelayed(this, 5000);
+                        }
+                    } catch (Exception e) {
+                        Log.e(TAG, "Error in status monitor runnable", e);
+                    }
+                }
+            };
+
+            // 延迟5秒开始第一次检查
+            statusMonitorHandler.postDelayed(statusMonitorRunnable, 5000);
+            Log.d(TAG, "📊 IO Manager status monitor started");
+        } catch (Exception e) {
+            Log.e(TAG, "Error starting IO manager status monitor", e);
+        }
+    }
+
+    /**
+     * 停止IO管理器状态监控
+     */
+    private void stopIoManagerStatusMonitor() {
+        try {
+            if (statusMonitorHandler != null) {
+                statusMonitorHandler.removeCallbacks(statusMonitorRunnable);
+                statusMonitorHandler = null;
+                statusMonitorRunnable = null;
+                Log.d(TAG, "📊 IO Manager status monitor stopped");
+            }
+        } catch (Exception e) {
+            Log.e(TAG, "Error stopping IO manager status monitor", e);
+            statusMonitorHandler = null;
+            statusMonitorRunnable = null;
+        }
     }
 
 }

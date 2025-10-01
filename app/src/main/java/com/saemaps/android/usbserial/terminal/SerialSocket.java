@@ -46,26 +46,36 @@ public class SerialSocket implements SerialInputOutputManager.Listener {
         };
     }
 
-    public String getName() { return serialPort.getDriver().getClass().getSimpleName().replace("SerialDriver",""); }
+    public String getName() {
+        return serialPort.getDriver().getClass().getSimpleName().replace("SerialDriver", "");
+    }
 
     public void connect(SerialListener listener) throws IOException {
         this.listener = listener;
         context.registerReceiver(disconnectReceiver, new IntentFilter(Constants.INTENT_ACTION_DISCONNECT));
-	try {
-	    serialPort.setDTR(true); // for arduino, ...
-	    serialPort.setRTS(true);
-	} catch (UnsupportedOperationException e) {
-	    Log.d(TAG, "Failed to set initial DTR/RTS", e);
-	}
+        try {
+            serialPort.setDTR(true); // for arduino, ...
+            serialPort.setRTS(true);
+        } catch (UnsupportedOperationException e) {
+            Log.d(TAG, "Failed to set initial DTR/RTS", e);
+        }
         ioManager = new SerialInputOutputManager(serialPort, this);
-        // ioManager.start(); // API changed in 3.8.0
+        // 使用3.8.0版本推荐的启动方式
+        Log.d(TAG, "Using Thread-based SerialInputOutputManager - 3.8.0 API");
+        new Thread(ioManager, "SerialInputOutputManager").start();
     }
 
     public void disconnect() {
         listener = null; // ignore remaining data and errors
         if (ioManager != null) {
             ioManager.setListener(null);
-            // ioManager.stop(); // API changed in 3.8.0
+            // 使用3.9.0版本推荐的停止方式
+            try {
+                ioManager.stop(); // 3.9.0版本推荐使用stop()方法
+            } catch (NoSuchMethodError e) {
+                // 如果stop()方法不存在，忽略（向后兼容）
+                Log.d(TAG, "Using legacy SerialInputOutputManager stop behavior");
+            }
             ioManager = null;
         }
         if (serialPort != null) {
@@ -80,7 +90,7 @@ public class SerialSocket implements SerialInputOutputManager.Listener {
             }
             serialPort = null;
         }
-        if(connection != null) {
+        if (connection != null) {
             connection.close();
             connection = null;
         }
@@ -91,7 +101,7 @@ public class SerialSocket implements SerialInputOutputManager.Listener {
     }
 
     public void write(byte[] data) throws IOException {
-        if(serialPort == null)
+        if (serialPort == null)
             throw new IOException("not connected");
         serialPort.write(data, WRITE_WAIT_MILLIS);
     }
